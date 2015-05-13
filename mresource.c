@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <limits.h>
 
 /*****************************************************************************/
 
@@ -23,7 +24,8 @@ enum ExitCodes {
     NO_ERROR=0,       /* exit code when all's well                           */
     FILE_NOT_OPEN,    /* exit code when file could not be opened             */
     NOT_FOUND,        /* exit code when a key could not be found             */
-    ARGUMENT_ERROR    /* exit code when called with too few arguments        */
+    ARGUMENT_ERROR,   /* exit code when called with too few arguments        */
+    TIME_OUT          /* exit code when key was not obtained before timeout  */
 };
 
 /*****************************************************************************/
@@ -63,10 +65,18 @@ int read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char**key)
               return NO_ERROR;
           }
       default:
-          *mode = RELEASE;
-          *file = argv[1];
-          *key  = argv[2];
-          return NO_ERROR;
+          if (argv[2][0]=='-' && argv[2][1]=='t') {
+              /* time-out*/
+              *mode = OBTAIN;
+              *file = argv[1];
+              *key = argv[3];
+              return NO_ERROR;
+          } else {
+              *mode = RELEASE;
+              *file = argv[1];
+              *key  = argv[2];
+              return NO_ERROR;
+          }
     }
 
     return NO_ERROR;
@@ -83,17 +93,20 @@ void show_help()
            "\n"
            "Usage:\n"
            "\n"
-           "    mresource [FILE [KEY] | [ -h | --help ] ]\n"
+           "    mresource [ -h | --help ]\n"
+           "    mresource FILE [-t TIME] \n"
+           "    mresource FILE [KEY] \n"
            "\n"
            "  When given a FILE, mresource checks out the next\n"
            "  available resource in the file, and marks it as used\n"
-           "  in the file.\n"
+           "  in the file.\n\n"
+           "  With '-t TIME', mresource ony tries for TIME seconds.\n"
            "\n"
            "  When given a FILE and a KEY, that resource key gets\n"
            "  unmarked in the file.\n"
            "\n"
            "  Note that FILE should contain a list of resource keys.\n"
-           "  The first character of each line is reserve to store the\n"
+           "  The first character of each line is reserved to store the\n"
            "  allocation signal: when it is a space (as it should be \n"
            "  initially), then the resource is not reserved, when it \n"
            "  is an exclamation mark it is.\n"
@@ -130,7 +143,7 @@ void fill_file_lock_controls(struct flock* set_lock, struct flock* unset_lock)
 
 /****************************************************************************/
 
-int obtain_resource(char* filename)
+int obtain_resource(char* filename, char* timeout)
 {
     /* Resource management routine to obtain a resource given a resource file */
 
@@ -141,7 +154,8 @@ int obtain_resource(char* filename)
     int     repeat;
     int     exitcode;
     struct flock set_lock, unset_lock;
-
+    int     rep = 0;
+    int     maxrep = timeout?((atoi(timeout)+POLL_INTERVAL-1)/POLL_INTERVAL):INT_MAX;
 
     fill_file_lock_controls(&set_lock, &unset_lock);
 
@@ -159,8 +173,14 @@ int obtain_resource(char* filename)
             } while ( !feof(file) && line[0] == SIGNAL_CHAR );
             
             if (feof(file)) {
-                sleep(POLL_INTERVAL);
-                repeat = 1; 
+                if (rep<maxrep) {
+                    sleep(POLL_INTERVAL);
+                    rep++;
+                    repeat = 1; 
+                } else {
+                    exitcode = TIME_OUT;
+                    repeat = 0;
+                }
             } else {           
                 fseek(file, file_pointer, SEEK_SET);
                 fprintf(file, "%c", SIGNAL_CHAR);
@@ -245,14 +265,15 @@ int main(int argc, char**argv)
     char*      filename;  /* file with resource names           */
     char*      key;       /* requested key                      */
 
-    if (read_cmdline(argc, argv, &mode, &filename, &key)) 
+    if (read_cmdline(argc, argv, &mode, &filename, &key)) {
+        if (mode==SHOW_HELP) show_help();
         return ARGUMENT_ERROR;
-
+    }
     /* if command arguments were o.k., do one of the following: */
 
     switch(mode) {
 
-      case OBTAIN:    return obtain_resource(filename);
+      case OBTAIN:    {char* timeout=key;return obtain_resource(filename, timeout);}
       case RELEASE:   return release_resource(filename, key);
       case SHOW_HELP: show_help(); return 0;
 
