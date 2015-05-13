@@ -2,6 +2,7 @@
  * mresource  - file-based resource key allocator
  *
  * Ramses van Zon, October 2013
+ * Second version, May 2015
  */
 
 #include <sys/types.h>
