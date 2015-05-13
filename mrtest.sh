@@ -27,11 +27,11 @@ RESOURCEFILE=/dev/shm/resourcefile
 # Set up N tasks
 for ((task=0; task<$N; task++))
 do
+    let sec=$RANDOM%$MAXSLEEP
     resource_handle=$(./mresource $RESOURCEFILE -t $TIMEOUT)
     if [ $? == 0 ]
     then
-        let sec=$RANDOM%$MAXSLEEP
-        echo $task:$resource_handle
+        echo $task:$resource_handle:$sec
         nohup sh -c "sleep $sec && ./mresource $RESOURCEFILE $resource_handle" >/dev/null 2>&1 &
     else
         echo $task:no resource available
