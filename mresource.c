@@ -36,12 +36,13 @@ enum Mode {
     OBTAIN = 1, 
     RELEASE, 
     SHOW_HELP, 
+    CREATE,
     ERROR 
 };
 
 /*****************************************************************************/
 
-int read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char**key) 
+int read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char**key, int* timeout) 
 {
     /* Read command line */
 
@@ -66,12 +67,19 @@ int read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char**key)
               return NO_ERROR;
           }
       default:
-          if (argv[2][0]=='-' && argv[2][1]=='t') {
-              /* time-out*/
-              *mode = OBTAIN;
-              *file = argv[1];
-              *key = argv[3];
-              return NO_ERROR;
+          if (argv[2][0]=='-') {
+              if (argv[2][1]=='t') {
+                  /* time-out*/
+                  *mode = OBTAIN;
+                  *file = argv[1];
+                  *timeout = atoi(argv[3]);
+                  return NO_ERROR;
+              } else {
+                  /* create */
+                  *mode = CREATE;
+                  *file = argv[1];
+                  return NO_ERROR;
+              }
           } else {
               *mode = RELEASE;
               *file = argv[1];
@@ -82,7 +90,7 @@ int read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char**key)
 
     return NO_ERROR;
 
-} /* end read_cmdline(argc,argv,mode,file,key) */
+} /* end read_cmdline(argc,argv,mode,file,key,timeout) */
 
 /****************************************************************************/
 
@@ -144,7 +152,7 @@ void fill_file_lock_controls(struct flock* set_lock, struct flock* unset_lock)
 
 /****************************************************************************/
 
-int obtain_resource(char* filename, char* timeout)
+int obtain_resource(char* filename, int timeout)
 {
     /* Resource management routine to obtain a resource given a resource file */
 
@@ -156,7 +164,7 @@ int obtain_resource(char* filename, char* timeout)
     int     exitcode;
     struct flock set_lock, unset_lock;
     int     rep = 0;
-    int     maxrep = timeout?((atoi(timeout)+POLL_INTERVAL-1)/POLL_INTERVAL):INT_MAX;
+    int     maxrep = timeout?((timeout+POLL_INTERVAL-1)/POLL_INTERVAL):INT_MAX;
 
     fill_file_lock_controls(&set_lock, &unset_lock);
 
@@ -203,7 +211,7 @@ int obtain_resource(char* filename, char* timeout)
 
     return exitcode;
 
-} /* end obtain_resource(filename) */
+} /* end obtain_resource(filename,timeout) */
 
 /****************************************************************************/
 
@@ -258,15 +266,40 @@ int release_resource(char* filename, char* key)
 
 /****************************************************************************/
 
+int create_resource_file(char* filename, int argc, char**argv) 
+{
+    FILE* f = fopen(filename,"w");
+
+    if ( f != NULL ) {
+
+        int i;
+
+        for (i=0; i< argc; i++) 
+            fprintf(f, " %s\n", argv[i]);
+
+        fclose(f);
+
+        return 0;
+
+    } else {
+
+        return 1;
+    }
+
+} /* end release_resource */
+
+/****************************************************************************/
+
 int main(int argc, char**argv) 
 {
     /* Main program */
 
-    enum Mode  mode;      /* what are we supposed to be doing?  */
-    char*      filename;  /* file with resource names           */
-    char*      key;       /* requested key                      */
+    enum Mode  mode;        /* what are we supposed to be doing?  */
+    char*      filename;    /* file with resource names           */
+    char*      key=NULL;    /* requested key                      */
+    int        timeout=0;   /* time-out delay                     */
 
-    if (read_cmdline(argc, argv, &mode, &filename, &key)) {
+    if (read_cmdline(argc, argv, &mode, &filename, &key, &timeout)) {
         if (mode==SHOW_HELP) show_help();
         return ARGUMENT_ERROR;
     }
@@ -274,7 +307,8 @@ int main(int argc, char**argv)
 
     switch(mode) {
 
-      case OBTAIN:    {char* timeout=key;return obtain_resource(filename, timeout);}
+      case CREATE:    return create_resource_file(filename, argc-3, argv+3);
+      case OBTAIN:    return obtain_resource(filename, timeout);
       case RELEASE:   return release_resource(filename, key);
       case SHOW_HELP: show_help(); return 0;
 
