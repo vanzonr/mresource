@@ -8,9 +8,11 @@
 #include <sys/types.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <limits.h>
+#include <error.h>
 
 /*****************************************************************************/
 
@@ -42,55 +44,58 @@ enum Mode {
 
 /*****************************************************************************/
 
-int read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char**key, int* timeout) 
+void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys, int*nkeys, int* timeout, int* delay) 
 {
     /* Read command line */
-
-    switch (argc) {
-    
-      case 0:
-      case 1:          
-          *mode = SHOW_HELP;
-          return ARGUMENT_ERROR;
-      case 2:
-          if (argv[1][0] == '-') {
-              *mode = SHOW_HELP;
-              if (strcmp(argv[1],"-h")==0 || strcmp(argv[1],"--help") == 0) {
-                  return NO_ERROR;
-              } else {
-                  return ARGUMENT_ERROR;
-              }
-          } else {
-              *mode = OBTAIN;
-              *file = argv[1];
-              *key  = NULL;
-              return NO_ERROR;
-          }
-      default:
-          if (argv[2][0]=='-') {
-              if (argv[2][1]=='t') {
-                  /* time-out*/
-                  *mode = OBTAIN;
-                  *file = argv[1];
-                  *timeout = atoi(argv[3]);
-                  return NO_ERROR;
-              } else {
-                  /* create */
-                  *mode = CREATE;
-                  *file = argv[1];
-                  return NO_ERROR;
-              }
-          } else {
-              *mode = RELEASE;
-              *file = argv[1];
-              *key  = argv[2];
-              return NO_ERROR;
-          }
+    *file    = NULL;
+    *keys    = NULL;
+    *nkeys   = 0;
+    *mode    = OBTAIN;
+    *timeout = INT_MAX;
+    *delay   = 0;
+    int argi;
+    for (argi = 1; argi < argc; argi++) {
+        if (argv[argi][0] == '-') {
+            switch (argv[argi][1]) {
+            case 'c': 
+                *mode=CREATE;
+                break;
+            case 'h': 
+                if (argi == 1 && argc == 2) 
+                    *mode=SHOW_HELP;
+                else
+                    error(ARGUMENT_ERROR, 0, "Too many arguments; '-h' must be the only argument.");
+                break;
+            case 't': 
+                if (argi < argc-1) 
+                    *timeout = atoi(argv[++argi]);
+                else
+                    error(ARGUMENT_ERROR, 0, "Missing parameter for '-t'.");
+                break;
+            case 'd': 
+                if (argi < argc-1) 
+                    *delay = atoi(argv[++argi]);
+                else
+                    error(ARGUMENT_ERROR, 0, "Missing parameter for '-d'.");
+                break;
+            default:
+                error(ARGUMENT_ERROR, 0, "Unknown option '%s.'", argv[argi]);
+            }
+        } else {
+            if (!*file) 
+                *file = argv[argi];
+            else if (!*keys) {
+                if (*mode == OBTAIN)
+                    *mode = RELEASE;
+                *keys = argv + argi;
+                for (;argi < argc && argv[argi][0] != '-'; argi++) 
+                    (*nkeys)++;
+                argi--;
+            } else 
+                error(ARGUMENT_ERROR, 0, "Extraneous argument '%s'\n", argv[argi]);
+        }
     }
-
-    return NO_ERROR;
-
-} /* end read_cmdline(argc,argv,mode,file,key,timeout) */
+} /* end read_cmdline */
 
 /****************************************************************************/
 
@@ -132,8 +137,6 @@ void show_help()
            "\n"); 
     
 } /* end show_help() */
-
-/****************************************************************************/
 
 /****************************************************************************/
 
@@ -301,20 +304,18 @@ int main(int argc, char**argv)
 
     enum Mode  mode;        /* what are we supposed to be doing?  */
     char*      filename;    /* file with resource names           */
-    char*      key=NULL;    /* requested key                      */
+    char**     keys=NULL;   /* requested key(s)                   */
     int        timeout=0;   /* time-out delay                     */
+    int        nkeys;       /* number of keys on command line     */
+    int        delay;       /* delay in releasing the key (not yet implemented, but accepted from cmdline */
 
-    if (read_cmdline(argc, argv, &mode, &filename, &key, &timeout)) {
-        if (mode==SHOW_HELP) show_help();
-        return ARGUMENT_ERROR;
-    }
-    /* if command arguments were o.k., do one of the following: */
+    read_cmdline(argc, argv, &mode, &filename, &keys, &nkeys, &timeout, &delay);
 
-    switch(mode) {
+    switch (mode) {
 
-      case CREATE:    return create_resource_file(filename, argc-3, argv+3);
+      case CREATE:    return create_resource_file(filename, nkeys, keys);
       case OBTAIN:    return obtain_resource(filename, timeout);
-      case RELEASE:   return release_resource(filename, key);
+      case RELEASE:   return release_resource(filename, keys[0]);
       case SHOW_HELP: show_help(); return 0;
 
     }
