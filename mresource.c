@@ -13,12 +13,14 @@
 #include <stdio.h>
 #include <limits.h>
 #include <error.h>
+#include <sys/wait.h>
 
 /*****************************************************************************/
 
 #define POLL_INTERVAL    2  /* number of seconds between trying to get a key */
 #define MAX_LINE_LEN  1024  /* maximum number of character per key           */
 #define SIGNAL_CHAR     '!' /* initial character on a line if key is used    */
+#define SWITCH_CHAR     '-' /* initial character of a command line switch    */
 
 /*****************************************************************************/
 
@@ -31,7 +33,11 @@ enum ExitCodes {
     TIME_OUT          /* exit code when key was not obtained before timeout  */
 };
 
-char ExitMsg[5][22] = { "", "Could not open file", "Could not find key", "Argument error", "Time-out" };
+char ExitMsg[5][22] = { "", 
+                        "Could not open file", 
+                        "Could not find key", 
+                        "Argument error", 
+                        "Time-out" };
 
 /*****************************************************************************/
 
@@ -57,7 +63,7 @@ void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys,
     *delay   = 0;
     int argi;
     for (argi = 1; argi < argc; argi++) {
-        if (argv[argi][0] == '-') {
+        if (argv[argi][0] == SWITCH_CHAR) {
             switch (argv[argi][1]) {
             case 'c': 
                 *mode=CREATE;
@@ -90,7 +96,7 @@ void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys,
                 if (*mode == OBTAIN)
                     *mode = RELEASE;
                 *keys = argv + argi;
-                for (;argi < argc && argv[argi][0] != '-'; argi++) 
+                for (;argi < argc && argv[argi][0] != SWITCH_CHAR; argi++) 
                     (*nkeys)++;
                 argi--;
             } else 
@@ -235,18 +241,50 @@ int release_resource(char* filename, char* key, int delay)
     size_t  file_pointer;
     char    line[MAX_LINE_LEN+1];
     int     exitcode;
+    pid_t   pid;
     struct flock set_lock, unset_lock;
 
 
     /* quick check before delaying */
+
     file = fopen(filename, "r+");
-    if (file == NULL) return FILE_NOT_OPEN;
 
-    /* delay, the silly way: */
+    if (file == NULL) return FILE_NOT_OPEN; else fclose(file);
 
+    /* double fork to daemonize */
+
+    pid = fork();
+
+    if (pid < 0)
+
+        error(1, 0, "fork error");
+
+    else if (pid == 0) {  /* pid==0 means this is the forked child */
+
+        pid = fork();
+        if (pid < 0)
+            error(1, 0, "fork error");
+        else if (pid > 0)
+            /* parent from second fork, i.e. first child */
+            return NO_ERROR;       
+        else {
+            ; /* We are the second child and will continue with the function */
+        }
+
+    } else {
+
+        if (waitpid(pid, NULL, 0) != pid)  /* wait for first child */
+            error(1, 0, "waitpid error");
+        return NO_ERROR;
+
+    }
+
+    /* If we get here, we know that we are the deamonized process. */
+
+    /* delay */
     sleep(delay);
 
-    /* return the resource to the pool using file locks */
+    /* return the resource to the pool, using file locks */
 
     fill_file_lock_controls(&set_lock, &unset_lock);
 
