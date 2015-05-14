@@ -31,6 +31,8 @@ enum ExitCodes {
     TIME_OUT          /* exit code when key was not obtained before timeout  */
 };
 
+char ExitMsg[5][22] = { "", "Could not open file", "Could not find key", "Argument error", "Time-out" };
+
 /*****************************************************************************/
 
 enum Mode { 
@@ -105,7 +107,7 @@ void show_help()
     printf("\n"
            "mresource - file-based resource key allocator\n"
            "\n"
-           "Usage:\n"
+           "  Usage:\n"
            "\n"
            "    mresource [ -h | --help ]\n"
            "    mresource FILE [-t TIME] \n"
@@ -308,17 +310,29 @@ int main(int argc, char**argv)
     int        timeout=0;   /* time-out delay                     */
     int        nkeys;       /* number of keys on command line     */
     int        delay;       /* delay in releasing the key (not yet implemented, but accepted from cmdline */
+    int        exitcode=0;
 
     read_cmdline(argc, argv, &mode, &filename, &keys, &nkeys, &timeout, &delay);
 
     switch (mode) {
-
-      case CREATE:    return create_resource_file(filename, nkeys, keys);
-      case OBTAIN:    return obtain_resource(filename, timeout);
-      case RELEASE:   return release_resource(filename, keys[0]);
-      case SHOW_HELP: show_help(); return 0;
-
+    case CREATE:    
+        exitcode = create_resource_file(filename, nkeys, keys); 
+        break;
+    case OBTAIN:    
+        exitcode = obtain_resource(filename, timeout); 
+        break;
+    case RELEASE:  
+        exitcode = release_resource(filename, keys[0]); 
+        break;
+    case SHOW_HELP: 
+        show_help(); 
+        break;
     }
+
+    if (exitcode!=0) 
+        error(exitcode, 0, "Error: %s.", ExitMsg[exitcode], argv[0]);
+    else 
+        return NO_ERROR;
 
 } /* end main((int argc, char**argv) */
 

@@ -18,11 +18,11 @@
 # Parameters
 N=40
 TIMEOUT=1
-MAXSLEEP=15
+MAXSLEEP=18
 RESOURCEFILE=/dev/shm/resourcefile
 
 # Create resource file
-./mresource $RESOURCEFILE -c R{1..5}
+./mresource $RESOURCEFILE -c R{1..4}
 
 # Set up N tasks
 for ((task=0; task<$N; task++))

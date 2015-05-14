@@ -1,6 +1,6 @@
 all: mresource
 mresource: mresource.c
-	gcc -o $@ $^ -Os -s
+	gcc -o $@ $^ -O1 -s
 test: mresource
 	./mrtest.sh
 clean:
