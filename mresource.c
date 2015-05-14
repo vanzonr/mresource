@@ -111,7 +111,8 @@ void show_help()
            "\n"
            "    mresource [ -h | --help ]\n"
            "    mresource FILE [-t TIME] \n"
-           "    mresource FILE [KEY] \n"
+           "    mresource FILE \n"
+           "    mresource FILE KEY [-d DELAY] \n"
            "    mresource FILE -c KEY1 [KEY2 ....] \n"
            "\n"
            "  When given a FILE but no key(s), mresource prints out\n"
@@ -121,7 +122,7 @@ void show_help()
            "  With '-t TIME', mresource only tries for TIME seconds.\n"
            "\n"
            "  When given a FILE and a KEY, that resource key gets\n"
-           "  unmarked in the file.\n"
+           "  unmarked in the file, after a DELAY seconds lag time.\n"
            "\n"
            "  Note that FILE should contain a list of resource keys.\n"
            "  The first character of each line is reserved to store the\n"
@@ -225,7 +226,7 @@ int obtain_resource(char* filename, int timeout)
 
 /****************************************************************************/
 
-int release_resource(char* filename, char* key)
+int release_resource(char* filename, char* key, int delay)
 {
     /* Resource management routine to release 'key' from resource file */
 
@@ -235,6 +236,17 @@ int release_resource(char* filename, char* key)
     char    line[MAX_LINE_LEN+1];
     int     exitcode;
     struct flock set_lock, unset_lock;
+
+
+    /* quick check before delaying */
+    file = fopen(filename, "r+");
+    if (file == NULL) return FILE_NOT_OPEN;
+
+    /* delay, the silly way: */
+
+    sleep(delay);
+
+    /* return the resource to the pool using file locks */
 
     fill_file_lock_controls(&set_lock, &unset_lock);
 
@@ -309,7 +321,7 @@ int main(int argc, char**argv)
     char**     keys=NULL;   /* requested key(s)                   */
     int        timeout=0;   /* time-out delay                     */
     int        nkeys;       /* number of keys on command line     */
-    int        delay;       /* delay in releasing the key (not yet implemented, but accepted from cmdline */
+    int        delay;       /* delay in releasing the key (silly implementation for now) */
     int        exitcode=0;
 
     read_cmdline(argc, argv, &mode, &filename, &keys, &nkeys, &timeout, &delay);
@@ -322,7 +334,7 @@ int main(int argc, char**argv)
         exitcode = obtain_resource(filename, timeout); 
         break;
     case RELEASE:  
-        exitcode = release_resource(filename, keys[0]); 
+        exitcode = release_resource(filename, keys[0], delay); 
         break;
     case SHOW_HELP: 
         show_help(); 
