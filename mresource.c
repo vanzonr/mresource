@@ -69,7 +69,7 @@ enum Mode {
 
 /*****************************************************************************/
 
-void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys, int*nkeys, int* timeout, int* delay) 
+void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys, int*nkeys, int* timeout, int* delay, int* polltime) 
 {
     /* Read command line */
     *file    = NULL;
@@ -78,6 +78,7 @@ void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys,
     *mode    = OBTAIN;
     *timeout = INT_MAX;
     *delay   = 0;
+    *polltime= 2;
     int argi;
     for (argi = 1; argi < argc; argi++) {
         if (argv[argi][0] == SWITCH_CHAR) {
@@ -102,6 +103,12 @@ void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys,
                     *delay = atoi(argv[++argi]);
                 else
                     error(ARGUMENT_ERROR, 0, "Missing parameter for '-d'.");
+                break;
+            case 'p': 
+                if (argi < argc-1) 
+                    *polltime = atoi(argv[++argi]);
+                else
+                    error(ARGUMENT_ERROR, 0, "Missing parameter for '-p'.");
                 break;
             default:
                 error(ARGUMENT_ERROR, 0, "Unknown option '%s.'", argv[argi]);
@@ -133,16 +140,21 @@ void show_help()
            "  Usage:\n"
            "\n"
            "    mresource [ -h | --help ]\n"
-           "    mresource FILE [-t TIME] \n"
-           "    mresource FILE \n"
+           "    mresource FILE [-t TIME] [-p POLLTIME]\n"
            "    mresource FILE KEY [-d DELAY] \n"
            "    mresource FILE -c KEY1 [KEY2 ....] \n"
            "\n"
            "  When given a FILE but no key(s), mresource prints out\n"
            "  the next available resource in the file, and marks it\n"
-           "  as used in the file.\n"
+           "  as used in the file. If no resource is available, it\n"
+           "  waits for POLLTIME seconds before trying again.\n"
+           "\n"
+           "  POLLTIME is 2 seconds by default, but can be set with\n"
+           "  the optional '-p POLLTIME' argument\n"
            "\n"
            "  With '-t TIME', mresource only tries for TIME seconds.\n"
+           "  Without '-t TIME', mresource waits untill a resource is\n"
+           "  available.\n "
            "\n"
            "  When given a FILE and a KEY, that resource key gets\n"
            "  unmarked in the file, after a DELAY seconds lag time.\n"
@@ -186,7 +198,7 @@ void fill_file_lock_controls(struct flock* set_lock, struct flock* unset_lock)
 
 /****************************************************************************/
 
-int obtain_resource(char* filename, int timeout)
+int obtain_resource(char* filename, int timeout, int polltime)
 {
     /* Resource management routine to obtain a resource given a resource file */
 
@@ -198,7 +210,7 @@ int obtain_resource(char* filename, int timeout)
     int     exitcode;
     struct flock set_lock, unset_lock;
     int     rep = 0;
-    int     maxrep = timeout?((timeout+POLL_INTERVAL-1)/POLL_INTERVAL):INT_MAX;
+    int     maxrep = timeout?((timeout+polltime-1)/polltime):INT_MAX;
 
     fill_file_lock_controls(&set_lock, &unset_lock);
 
@@ -217,7 +229,7 @@ int obtain_resource(char* filename, int timeout)
             
             if (feof(file)) {
                 if (rep<maxrep) {
-                    sleep(POLL_INTERVAL);
+                    sleep(polltime);
                     rep++;
                     repeat = 1; 
                 } else {
@@ -377,16 +389,17 @@ int main(int argc, char**argv)
     int        timeout=0;   /* time-out delay                     */
     int        nkeys;       /* number of keys on command line     */
     int        delay;       /* delay in releasing the key (silly implementation for now) */
+    int        polltime;    /* number of seconds in between tries */
     int        exitcode=0;
 
-    read_cmdline(argc, argv, &mode, &filename, &keys, &nkeys, &timeout, &delay);
+    read_cmdline(argc, argv, &mode, &filename, &keys, &nkeys, &timeout, &delay, &polltime);
 
     switch (mode) {
     case CREATE:    
         exitcode = create_resource_file(filename, nkeys, keys); 
         break;
     case OBTAIN:    
-        exitcode = obtain_resource(filename, timeout); 
+        exitcode = obtain_resource(filename, timeout, polltime); 
         break;
     case RELEASE:  
         exitcode = release_resource(filename, keys[0], delay); 

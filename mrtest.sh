@@ -2,7 +2,7 @@
 #
 # mrtest.sh - tests resource management with mresource
 #
-# Copyright (c)  2013-2016  Ramses van Zon
+# Copyright (c)  2015-2016  Ramses van Zon
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,8 +27,8 @@
 # Explanation of the script
 # -------------------------
 #
-# This script first creates a file with 5 resource keys, i.e., R1, R2,
-# R3, R4, and R5.
+# This script first creates a file with 4 resource keys, i.e., R1, R2,
+# R3, and R4.
 #
 # It then loops over N numbers, grabbing and locking a resource from
 # this file, and lauching a background process that will eventually
@@ -45,6 +45,7 @@
 N=40
 TIMEOUT=1
 MAXSLEEP=18
+POLLTIME=3
 RESOURCEFILE=/dev/shm/resourcefile
 
 # Create resource file
@@ -54,7 +55,7 @@ RESOURCEFILE=/dev/shm/resourcefile
 for ((task=0; task<$N; task++))
 do
     let sec=$RANDOM%$MAXSLEEP
-    resource_handle=$(./mresource $RESOURCEFILE -t $TIMEOUT)
+    resource_handle=$(./mresource $RESOURCEFILE -t $TIMEOUT -p $POLLTIME)
     if [ $? == 0 ]
     then
         echo $task:$resource_handle:$sec
