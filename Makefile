@@ -22,12 +22,15 @@
 # THE SOFTWARE.
 #
 
+CC=gcc
+CFLAGS=-O1 -s
 all: mresource
 
 mresource: mresource.c
-	gcc -o $@ $^ -O1 -s
+	${CC} -o $@ $^ ${CFLAGS}
 
 test: mresource
 	./mrtest.sh
+
 clean:
 	\rm -f mresource
