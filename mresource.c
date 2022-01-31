@@ -1,7 +1,7 @@
 /* 
  * mresource  - file-based resource key allocator
  *
- * Copyright (c) 2013-2016  Ramses van Zon
+ * Copyright (c) 2013-2022  Ramses van Zon
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -179,7 +179,7 @@ void show_help()
            "  TIP: When accessed a lot, put FILE a ram-based file\n"
            "  system, e.g., /tmp or /dev/shm.\n"
            "\n\n"
-           "Ramses van Zon, SciNet, Toronto, 2013-2015\n"
+           "Ramses van Zon, SciNet, Toronto, 2013-2022\n"
            "\n"); 
     
 } /* end show_help() */
