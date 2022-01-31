@@ -23,7 +23,7 @@
 #
 
 CC=gcc
-CFLAGS=-O1 -s
+CFLAGS=-O1 -s -Wall -pedantic -std=c99 -D_POSIX_C_SOURCE=1
 all: mresource
 
 mresource: mresource.c

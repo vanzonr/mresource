@@ -64,6 +64,7 @@ enum Mode {
     RELEASE, 
     SHOW_HELP, 
     CREATE,
+    APPEND,
     ERROR 
 };
 
@@ -85,6 +86,9 @@ void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys,
             switch (argv[argi][1]) {
             case 'c': 
                 *mode=CREATE;
+                break;
+            case 'a': 
+                *mode=APPEND;
                 break;
             case 'h': 
                 if (argi == 1 && argc == 2) 
@@ -143,6 +147,7 @@ void show_help()
            "    mresource FILE [-t TIME] [-p POLLTIME]\n"
            "    mresource FILE KEY [-d DELAY] \n"
            "    mresource FILE -c KEY1 [KEY2 ....] \n"
+           "    mresource FILE -a KEY1 [KEY2 ....] \n"
            "\n"
            "  When given a FILE but no key(s), mresource prints out\n"
            "  the next available resource in the file, and marks it\n"
@@ -167,6 +172,9 @@ void show_help()
            "\n"
            "  mresource can generate such a file when invoked with\n"
            "  FILE, '-c', and a list of one or more keys.\n"
+           "\n"
+           "  mresource can insert more keys into such a file when\n"
+           "  invoked with FILE, '-a', and a list of one or more keys.\n"
            "\n"
            "  TIP: When accessed a lot, put FILE a ram-based file\n"
            "  system, e.g., /tmp or /dev/shm.\n"
@@ -206,6 +214,7 @@ int obtain_resource(char* filename, int timeout, int polltime)
     int     file_descriptor;
     size_t  file_pointer;
     char    line[MAX_LINE_LEN+1];
+    char*   checkline;
     int     repeat;
     int     exitcode;
     struct flock set_lock, unset_lock;
@@ -224,8 +233,8 @@ int obtain_resource(char* filename, int timeout, int polltime)
 
             do {
                 file_pointer = ftell(file);
-                fgets(line, sizeof(line), file);
-            } while ( !feof(file) && line[0] == SIGNAL_CHAR );
+                checkline = fgets(line, sizeof(line), file);
+            } while ( checkline != NULL && !feof(file) && line[0] == SIGNAL_CHAR );
             
             if (feof(file)) {
                 if (rep<maxrep) {
@@ -269,6 +278,7 @@ int release_resource(char* filename, char* key, int delay)
     int     file_descriptor;
     size_t  file_pointer;
     char    line[MAX_LINE_LEN+1];
+    char*   checkline;
     int     exitcode;
     pid_t   pid;
     struct flock set_lock, unset_lock;
@@ -327,10 +337,10 @@ int release_resource(char* filename, char* key, int delay)
         
         do {
             file_pointer = ftell(file);
-            fgets(line, sizeof(line), file);
-            if (line[strlen(line)-1]=='\n')
+            checkline = fgets(line, sizeof(line), file);
+            if (strlen(line) > 0 && line[strlen(line)-1]=='\n')
                 line[strlen(line)-1]='\0';
-        } while ( !feof(file) && strcmp(line+1, key) != 0 );
+        } while ( checkline != NULL && !feof(file) && strcmp(line+1, key) != 0 );
         
         if (feof(file))
             exitcode = NOT_FOUND;
@@ -357,7 +367,7 @@ int release_resource(char* filename, char* key, int delay)
 
 int create_resource_file(char* filename, int argc, char**argv) 
 {
-    FILE* f = fopen(filename,"w");
+    FILE* f = fopen(filename,"w"); 
 
     if ( f != NULL ) {
 
@@ -375,7 +385,52 @@ int create_resource_file(char* filename, int argc, char**argv)
         return 1;
     }
 
-} /* end release_resource */
+} /* end create_resource_file */
+
+/****************************************************************************/
+
+int append_resource_file(char* filename, int argc, char**argv) 
+{
+    /* Append possible keys to a resource file that could be in use already */
+    
+    FILE*   file;
+    int     file_descriptor;
+    int     exitcode;
+    struct flock set_lock, unset_lock;
+
+    fill_file_lock_controls(&set_lock, &unset_lock);
+
+    while (1) {
+        file = fopen(filename, "a");
+
+        if (file != NULL) {
+
+            int i;
+
+            file_descriptor = fileno(file);
+            fcntl(file_descriptor, F_SETLKW, &set_lock);
+            
+            for (i=0; i< argc; i++) 
+                fprintf(file, " %s\n", argv[i]);
+            
+            fcntl(file_descriptor, F_SETLK, &unset_lock);
+            fclose(file);
+
+            exitcode = NO_ERROR;
+
+            break;
+
+        } else {
+            
+            exitcode = FILE_NOT_OPEN;
+            
+        }
+        
+    }
+
+    return exitcode;
+    
+} /* end append_resource_file */
 
 /****************************************************************************/
 
@@ -398,6 +453,9 @@ int main(int argc, char**argv)
     case CREATE:    
         exitcode = create_resource_file(filename, nkeys, keys); 
         break;
+    case APPEND:    
+        exitcode = append_resource_file(filename, nkeys, keys); 
+        break;
     case OBTAIN:    
         exitcode = obtain_resource(filename, timeout, polltime); 
         break;
@@ -407,10 +465,13 @@ int main(int argc, char**argv)
     case SHOW_HELP: 
         show_help(); 
         break;
+    case ERROR:
+        show_help();
+        exitcode = 1;
     }
 
     if (exitcode!=0) 
-        error(exitcode, 0, "Error: %s.", ExitMsg[exitcode], argv[0]);
+        error(exitcode, 0, "Error (%s): %s.", argv[0], ExitMsg[exitcode]);
     else 
         return NO_ERROR;
 
