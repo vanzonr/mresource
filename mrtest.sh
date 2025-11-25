@@ -49,18 +49,21 @@ POLLTIME=3
 RESOURCEFILE=/dev/shm/resourcefile
 
 # Create resource file
-./mresource $RESOURCEFILE -c R{1..4}
+./mresource -v $RESOURCEFILE -c R{1..4}
 
 # Set up N tasks
 for ((task=0; task<$N; task++))
 do
     let sec=$RANDOM%$MAXSLEEP
-    resource_handle=$(./mresource $RESOURCEFILE -t $TIMEOUT -p $POLLTIME)
+    resource_handle=$(./mresource -v $RESOURCEFILE -t $TIMEOUT -p $POLLTIME)
     if [ $? == 0 ]
     then
         echo $task:$resource_handle:$sec
-        nohup sh -c "sleep $sec && ./mresource $RESOURCEFILE $resource_handle" >/dev/null 2>&1 &
+        nohup sh -c "sleep $sec && ./mresource -v $RESOURCEFILE $resource_handle" >/dev/null 2> output.$task.txt &
     else
         echo $task:no resource available
     fi
 done
+
+cat output.*.txt
+rm -f output.*.txt

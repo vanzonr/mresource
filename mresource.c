@@ -31,6 +31,7 @@
 #include <limits.h>
 #include <error.h>
 #include <sys/wait.h>
+#include <stdbool.h>
 
 /*****************************************************************************/
 
@@ -70,7 +71,7 @@ enum Mode {
 
 /*****************************************************************************/
 
-void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys, int*nkeys, int* timeout, int* delay, int* polltime) 
+void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys, int*nkeys, int* timeout, int* delay, int* polltime, bool* verbose) 
 {
     /* Read command line */
     *file    = NULL;
@@ -80,6 +81,7 @@ void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys,
     *timeout = INT_MAX;
     *delay   = 0;
     *polltime= 2;
+    *verbose = false;
     int argi;
     for (argi = 1; argi < argc; argi++) {
         if (argv[argi][0] == SWITCH_CHAR) {
@@ -113,6 +115,9 @@ void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys,
                     *polltime = atoi(argv[++argi]);
                 else
                     error(ARGUMENT_ERROR, 0, "Missing parameter for '-p'.");
+                break;
+            case 'v': 
+                *verbose=true;
                 break;
             default:
                 error(ARGUMENT_ERROR, 0, "Unknown option '%s.'", argv[argi]);
@@ -206,7 +211,7 @@ void fill_file_lock_controls(struct flock* set_lock, struct flock* unset_lock)
 
 /****************************************************************************/
 
-int obtain_resource(char* filename, int timeout, int polltime)
+int obtain_resource(char* filename, int timeout, int polltime, bool verbose)
 {
     /* Resource management routine to obtain a resource given a resource file */
 
@@ -215,7 +220,7 @@ int obtain_resource(char* filename, int timeout, int polltime)
     size_t  file_pointer;
     char    line[MAX_LINE_LEN+1];
     char*   checkline;
-    int     repeat;
+    int     repeat = 0;
     int     exitcode;
     struct flock set_lock, unset_lock;
     int     rep = 0;
@@ -223,6 +228,15 @@ int obtain_resource(char* filename, int timeout, int polltime)
 
     fill_file_lock_controls(&set_lock, &unset_lock);
 
+    /* optionally report what is being done */
+    
+    if (verbose) {
+        
+        error(0, 0, "Info: Obtaining a resource key from file '%s' with a timeout of %d s.", filename, timeout);
+        
+    }
+
+    /* try until time out */
     do {
         file = fopen(filename, "r+");
 
@@ -264,13 +278,19 @@ int obtain_resource(char* filename, int timeout, int polltime)
         
     } while (repeat); /* keep polling if resources were not avaliable */
 
+    if (verbose && exitcode == 0) {
+        
+        error(0, 0, "Info: Resource key obtained from file '%s': %s", filename, line+1);
+
+    }
+        
     return exitcode;
 
 } /* end obtain_resource(filename,timeout) */
 
 /****************************************************************************/
 
-int release_resource(char* filename, char* key, int delay)
+int release_resource(char* filename, char* key, int delay, bool verbose)
 {
     /* Resource management routine to release 'key' from resource file */
 
@@ -283,6 +303,15 @@ int release_resource(char* filename, char* key, int delay)
     pid_t   pid;
     struct flock set_lock, unset_lock;
 
+    /* optionally report what is being done */
+
+    if (verbose) {        
+        if (delay > 0) {
+            error(0, 0, "Info: Releasing the resource key %s from file '%s' with a delay of %d s.", key, filename, delay);            
+        } else {            
+            error(0, 0, "Info: Releasing the resource key %s from file '%s'.", key, filename);
+        }
+    }
 
     /* quick check before delaying */
 
@@ -347,6 +376,9 @@ int release_resource(char* filename, char* key, int delay)
         else {           
             fseek(file, file_pointer, SEEK_SET);
             fprintf(file, "%c", ' ');
+            if (verbose) {
+                error(0, 0, "Info: Resource key %s made available again in file '%s'.", key, filename);
+            }
             exitcode = NO_ERROR;
         }
         
@@ -365,8 +397,14 @@ int release_resource(char* filename, char* key, int delay)
 
 /****************************************************************************/
 
-int create_resource_file(char* filename, int argc, char**argv) 
+int create_resource_file(char* filename, int argc, char**argv, bool verbose) 
 {
+    /* optionally report what is being done */
+
+    if (verbose) {        
+        error(0, 0, "Creating resource key file '%s'.", filename);
+    }
+    
     FILE* f = fopen(filename,"w"); 
 
     if ( f != NULL ) {
@@ -389,10 +427,16 @@ int create_resource_file(char* filename, int argc, char**argv)
 
 /****************************************************************************/
 
-int append_resource_file(char* filename, int argc, char**argv) 
+int append_resource_file(char* filename, int argc, char**argv, bool verbose)
 {
     /* Append possible keys to a resource file that could be in use already */
-    
+
+    /* optionally report what is being done */
+
+    if (verbose) {        
+        error(0, 0, "Appending keys to file '%s'.", filename);
+    }
+
     FILE*   file;
     int     file_descriptor;
     int     exitcode;
@@ -437,30 +481,31 @@ int append_resource_file(char* filename, int argc, char**argv)
 int main(int argc, char**argv) 
 {
     /* Main program */
-
-    enum Mode  mode;        /* what are we supposed to be doing?  */
-    char*      filename;    /* file with resource names           */
+    
+    enum Mode  mode=SHOW_HELP; /* what are we supposed to be doing?  */
+    char*      filename=""; /* file with resource names           */
     char**     keys=NULL;   /* requested key(s)                   */
     int        timeout=0;   /* time-out delay                     */
-    int        nkeys;       /* number of keys on command line     */
-    int        delay;       /* delay in releasing the key (silly implementation for now) */
-    int        polltime;    /* number of seconds in between tries */
+    int        nkeys=0;     /* number of keys on command line     */
+    int        delay=0;     /* delay in releasing the key (silly implementation for now) */
+    int        polltime=1;  /* number of seconds in between tries */
     int        exitcode=0;
-
-    read_cmdline(argc, argv, &mode, &filename, &keys, &nkeys, &timeout, &delay, &polltime);
+    bool       verbose=false;
+    
+    read_cmdline(argc, argv, &mode, &filename, &keys, &nkeys, &timeout, &delay, &polltime, &verbose);
 
     switch (mode) {
     case CREATE:    
-        exitcode = create_resource_file(filename, nkeys, keys); 
+        exitcode = create_resource_file(filename, nkeys, keys, verbose); 
         break;
     case APPEND:    
-        exitcode = append_resource_file(filename, nkeys, keys); 
+        exitcode = append_resource_file(filename, nkeys, keys, verbose); 
         break;
     case OBTAIN:    
-        exitcode = obtain_resource(filename, timeout, polltime); 
+        exitcode = obtain_resource(filename, timeout, polltime, verbose); 
         break;
     case RELEASE:  
-        exitcode = release_resource(filename, keys[0], delay); 
+        exitcode = release_resource(filename, keys[0], delay, verbose); 
         break;
     case SHOW_HELP: 
         show_help(); 
@@ -471,7 +516,7 @@ int main(int argc, char**argv)
     }
 
     if (exitcode!=0) 
-        error(exitcode, 0, "Error (%s): %s.", argv[0], ExitMsg[exitcode]);
+        error(exitcode, 0, "Error: %s.", ExitMsg[exitcode]);
     else 
         return NO_ERROR;
 
