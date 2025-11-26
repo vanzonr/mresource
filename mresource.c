@@ -1,7 +1,7 @@
 /* 
  * mresource  - file-based resource key allocator
  *
- * Copyright (c) 2013-2022  Ramses van Zon
+ * Copyright (c) 2013-2025  Ramses van Zon
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -42,15 +42,16 @@
 
 /*****************************************************************************/
 
+/* Possible error codes of the program: */
 enum ExitCodes { 
-    /* possible error codes of the program */
-    NO_ERROR=0,       /* exit code when all's well                           */
+    NO_ERROR = 0,     /* exit code when all's well                           */
     FILE_NOT_OPEN,    /* exit code when file could not be opened             */
     NOT_FOUND,        /* exit code when a key could not be found             */
     ARGUMENT_ERROR,   /* exit code when called with too few arguments        */
     TIME_OUT          /* exit code when key was not obtained before timeout  */
 };
 
+/* Corresponding error messages: */
 char ExitMsg[5][22] = { "", 
                         "Could not open file", 
                         "Could not find key", 
@@ -59,8 +60,8 @@ char ExitMsg[5][22] = { "",
 
 /*****************************************************************************/
 
+/* Possible actions the program may perform */
 enum Mode { 
-    /* possible actions the program may perform */
     OBTAIN = 1, 
     RELEASE, 
     SHOW_HELP, 
@@ -71,9 +72,22 @@ enum Mode {
 
 /*****************************************************************************/
 
-void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys, int*nkeys, int* timeout, int* delay, int* polltime, bool* verbose) 
+static void read_cmdline(int        argc,
+                         char**     argv,
+                         enum Mode* mode,
+                         char**     file,
+                         char***    keys,
+                         int*       nkeys,
+                         int*       timeout,
+                         int*       delay,
+                         int*       polltime,
+                         bool*      verbose) 
 {
     /* Read command line */
+    
+    int argi;
+    int n = 1;
+    
     *file    = NULL;
     *keys    = NULL;
     *nkeys   = 0;
@@ -82,67 +96,92 @@ void read_cmdline(int argc, char**argv, enum Mode*mode, char**file, char***keys,
     *delay   = 0;
     *polltime= 2;
     *verbose = false;
-    int argi;
     for (argi = 1; argi < argc; argi++) {
         if (argv[argi][0] == SWITCH_CHAR) {
             switch (argv[argi][1]) {
             case 'c': 
-                *mode=CREATE;
+                *mode = CREATE;
                 break;
             case 'a': 
-                *mode=APPEND;
+                *mode = APPEND;
                 break;
             case 'h': 
-                if (argi == 1 && argc == 2) 
-                    *mode=SHOW_HELP;
-                else
-                    error(ARGUMENT_ERROR, 0, "Too many arguments; '-h' must be the only argument.");
+                if (argi == 1 && argc == 2) {
+                    *mode = SHOW_HELP;
+                } else {
+                    error(ARGUMENT_ERROR, 0,
+                          "Too many arguments; '-h' must be the only argument.");
+                }
                 break;
             case 't': 
-                if (argi < argc-1) 
+                if (argi < argc-1) {
                     *timeout = atoi(argv[++argi]);
-                else
-                    error(ARGUMENT_ERROR, 0, "Missing parameter for '-t'.");
+                } else {
+                    error(ARGUMENT_ERROR, 0,
+                          "Missing parameter for '-t'.");
+                }
                 break;
             case 'd': 
-                if (argi < argc-1) 
+                if (argi < argc-1) {
                     *delay = atoi(argv[++argi]);
-                else
-                    error(ARGUMENT_ERROR, 0, "Missing parameter for '-d'.");
+                } else {
+                    error(ARGUMENT_ERROR, 0,
+                          "Missing parameter for '-d'.");
+                }
                 break;
             case 'p': 
-                if (argi < argc-1) 
+                if (argi < argc-1) {
                     *polltime = atoi(argv[++argi]);
-                else
-                    error(ARGUMENT_ERROR, 0, "Missing parameter for '-p'.");
+                } else {
+                    error(ARGUMENT_ERROR, 0,
+                          "Missing parameter for '-p'.");
+                }
                 break;
             case 'v': 
-                *verbose=true;
+                *verbose = true;
+                break;
+            case 'n': 
+                if (argi < argc-1) {
+                    n = atoi(argv[++argi]);
+                } else {
+                    error(ARGUMENT_ERROR, 0,
+                          "Missing parameter for '-p'.");
+                }
                 break;
             default:
-                error(ARGUMENT_ERROR, 0, "Unknown option '%s.'", argv[argi]);
+                error(ARGUMENT_ERROR, 0,
+                      "Unknown option '%s.'", argv[argi]);
             }
         } else {
-            if (!*file) 
+            if (!*file) {
                 *file = argv[argi];
-            else if (!*keys) {
-                if (*mode == OBTAIN)
+            } else if (!*keys) {
+                if (*mode == OBTAIN) {
                     *mode = RELEASE;
+                }
                 *keys = argv + argi;
-                for (;argi < argc && argv[argi][0] != SWITCH_CHAR; argi++) 
+                for (;argi < argc && argv[argi][0] != SWITCH_CHAR; argi++) {
                     (*nkeys)++;
+                }
                 argi--;
-            } else 
-                error(ARGUMENT_ERROR, 0, "Extraneous argument '%s'\n", argv[argi]);
+            } else { 
+                error(ARGUMENT_ERROR, 0,
+                      "Extraneous argument '%s'\n", argv[argi]);
+            }
         }
     }
-} /* end read_cmdline */
+    /* the -n arguments sets nkeys iff in OBTAIN mode*/
+    if (*mode == OBTAIN) {
+        *nkeys = n; 
+    }
+} /* end read_cmdline() */
 
 /****************************************************************************/
 
-void show_help()
+static void show_help()
 {
     /* Show help message */
+    
     printf("\n"
            "mresource - file-based resource key allocator\n"
            "\n"
@@ -191,11 +230,13 @@ void show_help()
 
 /****************************************************************************/
 
-void fill_file_lock_controls(struct flock* set_lock, struct flock* unset_lock)
+static void fill_file_lock_controls(struct flock* set_lock,
+                                    struct flock* unset_lock)
 {
     /* Fill two 'struct flock's needed for file locking and unlocking */
-
+    
     pid_t pid = getpid();
+    
     set_lock->l_type     = F_WRLCK;
     set_lock->l_whence   = SEEK_SET;
     set_lock->l_start    = 0;
@@ -205,38 +246,42 @@ void fill_file_lock_controls(struct flock* set_lock, struct flock* unset_lock)
     unset_lock->l_whence = SEEK_SET;
     unset_lock->l_start  = 0;
     unset_lock->l_len    = 0;
-    unset_lock->l_pid    = pid; 
-
-} /* end fill_file_lock_controls(set_lock,unset_lock) */
+    unset_lock->l_pid    = pid;
+    
+} /* end fill_file_lock_controls() */
 
 /****************************************************************************/
 
-int obtain_resource(char* filename, int timeout, int polltime, bool verbose)
+static int obtain_resource(char* filename,
+                           int   timeout,
+                           int   polltime,
+                           bool  verbose)
 {
     /* Resource management routine to obtain a resource given a resource file */
-
-    FILE*   file;
-    int     file_descriptor;
-    size_t  file_pointer;
-    char    line[MAX_LINE_LEN+1];
-    char*   checkline;
-    int     repeat = 0;
-    int     exitcode;
-    struct flock set_lock, unset_lock;
-    int     rep = 0;
-    int     maxrep = timeout?((timeout+polltime-1)/polltime):INT_MAX;
-
-    fill_file_lock_controls(&set_lock, &unset_lock);
-
-    /* optionally report what is being done */
     
+    FILE*        file;
+    int          file_descriptor;
+    size_t       file_pointer;
+    char         line[MAX_LINE_LEN+1];
+    char*        checkline;
+    int          repeat = 0;
+    int          exitcode = 0;
+    int          rep = 0;
+    int          maxrep = timeout?((timeout+polltime-1)/polltime):INT_MAX;
+    struct flock set_lock;
+    struct flock unset_lock;
+
+    /* optionally report what is being done */    
     if (verbose) {
-        
-        error(0, 0, "Info: Obtaining a resource key from file '%s' with a timeout of %d s.", filename, timeout);
-        
+        error(0, 0,
+              "Info: Obtaining a resource key from file '%s' with a timeout of %d s.",
+              filename, timeout);
     }
 
-    /* try until time out */
+    /* to avoid race conditions accessing the resource key file, use locks */
+    fill_file_lock_controls(&set_lock, &unset_lock);
+
+    /* try getting a key until time out */    
     do {
         file = fopen(filename, "r+");
 
@@ -251,7 +296,7 @@ int obtain_resource(char* filename, int timeout, int polltime, bool verbose)
             } while ( checkline != NULL && !feof(file) && line[0] == SIGNAL_CHAR );
             
             if (feof(file)) {
-                if (rep<maxrep) {
+                if (rep < maxrep) {
                     sleep(polltime);
                     rep++;
                     repeat = 1; 
@@ -278,84 +323,97 @@ int obtain_resource(char* filename, int timeout, int polltime, bool verbose)
         
     } while (repeat); /* keep polling if resources were not avaliable */
 
-    if (verbose && exitcode == 0) {
-        
-        error(0, 0, "Info: Resource key obtained from file '%s': %s", filename, line+1);
-
+    if (verbose && exitcode == 0) {    
+        error(0, 0,
+              "Info: Resource key obtained from file '%s': %s",
+              filename, line+1);
     }
         
     return exitcode;
 
-} /* end obtain_resource(filename,timeout) */
+} /* end obtain_resource() */
 
 /****************************************************************************/
 
-int release_resource(char* filename, char* key, int delay, bool verbose)
+static int release_resource(char* filename, char* key, int delay, bool verbose)
 {
     /* Resource management routine to release 'key' from resource file */
 
-    FILE*   file;
-    int     file_descriptor;
-    size_t  file_pointer;
-    char    line[MAX_LINE_LEN+1];
-    char*   checkline;
-    int     exitcode;
-    pid_t   pid;
-    struct flock set_lock, unset_lock;
+    FILE*        file;
+    int          file_descriptor;
+    size_t       file_pointer;
+    char         line[MAX_LINE_LEN+1];
+    char*        checkline;
+    int          exitcode;
+    pid_t        pid;
+    struct flock set_lock;
+    struct flock unset_lock;
 
     /* optionally report what is being done */
 
     if (verbose) {        
         if (delay > 0) {
-            error(0, 0, "Info: Releasing the resource key %s from file '%s' with a delay of %d s.", key, filename, delay);            
+            error(0, 0,
+                  "Info: Releasing the resource key %s from file '%s' with a delay of %d s.",
+                  key, filename, delay);            
         } else {            
-            error(0, 0, "Info: Releasing the resource key %s from file '%s'.", key, filename);
+            error(0, 0,
+                  "Info: Releasing the resource key %s from file '%s'.",
+                  key, filename);
         }
     }
 
     /* quick check before delaying */
 
     file = fopen(filename, "r+");
-
-    if (file == NULL) return FILE_NOT_OPEN; else fclose(file);
-
-    /* double fork to daemonize */
-
-    pid = fork();
-
-    if (pid < 0)
-
-        error(1, 0, "fork error");
-
-    else if (pid == 0) {  /* pid==0 means this is the forked child */
-
-        pid = fork();
-        if (pid < 0)
-            error(1, 0, "fork error");
-        else if (pid > 0)
-            /* parent from second fork, i.e. first child */
-            return NO_ERROR;       
-        else {
-            ; /* We are the second child and will continue with the function */
-        }
-
+    
+    if (file == NULL) {
+        return FILE_NOT_OPEN;
     } else {
-
-        if (waitpid(pid, NULL, 0) != pid)  /* wait for first child */
-            error(1, 0, "waitpid error");
-        return NO_ERROR;
-
+        fclose(file);
     }
 
-    /* If we get here, we know that we are the deamonized process. */
+    /* double fork to daemonize only if there's a delay*/
+    if (delay > 0) {
+        pid = fork();
 
-    /* delay */
+        if (pid < 0) {
+
+            error(1, 0,
+                  "fork error");
+
+        } else if (pid == 0) {  /* pid == 0 means this is the forked child */
+
+            pid = fork();
+            if (pid < 0) {
+                error(1, 0,
+                      "fork error");
+            } else if (pid > 0) {
+                /* parent from second fork, i.e. first child */
+                return NO_ERROR;       
+            } else {
+                ; /* We are the second child and will continue with the function */
+            }
+
+        } else {
+
+            if (waitpid(pid, NULL, 0) != pid) { /* wait for first child */
+                error(1, 0,
+                      "waitpid error");
+            }
+            return NO_ERROR;
+
+        }
+        /* If we get here, we know that we are the daemonized process. */
+    }
+
+
+    /* delay (could be zero) */
     sleep(delay);
 
     /* return the resource to the pool, using file locks */
 
     fill_file_lock_controls(&set_lock, &unset_lock);
-
 
     file = fopen(filename, "r+");
 
@@ -367,17 +425,20 @@ int release_resource(char* filename, char* key, int delay, bool verbose)
         do {
             file_pointer = ftell(file);
             checkline = fgets(line, sizeof(line), file);
-            if (strlen(line) > 0 && line[strlen(line)-1]=='\n')
+            if (strlen(line) > 0 && line[strlen(line)-1] == '\n') {
                 line[strlen(line)-1]='\0';
+            }
         } while ( checkline != NULL && !feof(file) && strcmp(line+1, key) != 0 );
         
-        if (feof(file))
+        if (feof(file)) {
             exitcode = NOT_FOUND;
-        else {           
+        } else {           
             fseek(file, file_pointer, SEEK_SET);
             fprintf(file, "%c", ' ');
             if (verbose) {
-                error(0, 0, "Info: Resource key %s made available again in file '%s'.", key, filename);
+                error(0, 0,
+                      "Info: Resource key %s made available again in file '%s'.",
+                      key, filename);
             }
             exitcode = NO_ERROR;
         }
@@ -393,26 +454,32 @@ int release_resource(char* filename, char* key, int delay, bool verbose)
 
     return exitcode;
 
-} /* end release_resource(filename,key) */
+} /* end release_resource() */
 
 /****************************************************************************/
 
-int create_resource_file(char* filename, int argc, char**argv, bool verbose) 
+static int create_resource_file(char* filename, int argc, char**argv, bool verbose) 
 {
+    /* Create a resource key file with argc keys given by argv. */
+      
+    FILE* f;
+    int   i;
+
     /* optionally report what is being done */
 
     if (verbose) {        
-        error(0, 0, "Creating resource key file '%s'.", filename);
+        error(0, 0,
+              "Creating resource key file '%s'.",
+              filename);
     }
     
-    FILE* f = fopen(filename,"w"); 
+    f = fopen(filename,"w"); 
 
     if ( f != NULL ) {
 
-        int i;
-
-        for (i=0; i< argc; i++) 
+        for (i = 0; i < argc; i++) {
             fprintf(f, " %s\n", argv[i]);
+        }
 
         fclose(f);
 
@@ -423,25 +490,28 @@ int create_resource_file(char* filename, int argc, char**argv, bool verbose)
         return 1;
     }
 
-} /* end create_resource_file */
+} /* end create_resource_file() */
 
 /****************************************************************************/
 
-int append_resource_file(char* filename, int argc, char**argv, bool verbose)
+static int append_resource_file(char* filename, int argc, char**argv, bool verbose)
 {
     /* Append possible keys to a resource file that could be in use already */
-
-    /* optionally report what is being done */
-
-    if (verbose) {        
-        error(0, 0, "Appending keys to file '%s'.", filename);
-    }
 
     FILE*   file;
     int     file_descriptor;
     int     exitcode;
+    int     i;
     struct flock set_lock, unset_lock;
 
+    /* optionally report what is being done */
+    if (verbose) {        
+        error(0, 0,
+              "Appending keys to file '%s'.",
+              filename);
+    }
+
+    /* to avoid race conditions accessing the resource key file, use locks */
     fill_file_lock_controls(&set_lock, &unset_lock);
 
     while (1) {
@@ -449,13 +519,12 @@ int append_resource_file(char* filename, int argc, char**argv, bool verbose)
 
         if (file != NULL) {
 
-            int i;
-
             file_descriptor = fileno(file);
             fcntl(file_descriptor, F_SETLKW, &set_lock);
             
-            for (i=0; i< argc; i++) 
+            for (i = 0; i < argc; i++) {
                 fprintf(file, " %s\n", argv[i]);
+            }
             
             fcntl(file_descriptor, F_SETLK, &unset_lock);
             fclose(file);
@@ -474,7 +543,7 @@ int append_resource_file(char* filename, int argc, char**argv, bool verbose)
 
     return exitcode;
     
-} /* end append_resource_file */
+} /* end append_resource_file() */
 
 /****************************************************************************/
 
@@ -482,44 +551,62 @@ int main(int argc, char**argv)
 {
     /* Main program */
     
-    enum Mode  mode=SHOW_HELP; /* what are we supposed to be doing?  */
-    char*      filename=""; /* file with resource names           */
-    char**     keys=NULL;   /* requested key(s)                   */
-    int        timeout=0;   /* time-out delay                     */
-    int        nkeys=0;     /* number of keys on command line     */
-    int        delay=0;     /* delay in releasing the key (silly implementation for now) */
-    int        polltime=1;  /* number of seconds in between tries */
-    int        exitcode=0;
-    bool       verbose=false;
+    enum Mode  mode     = SHOW_HELP; /* what are we supposed to be doing?  */
+    char*      filename = "";        /* file with resource names           */
+    char**     keys     = NULL;      /* requested key(s)                   */
+    int        timeout  = 0;         /* time-out delay                     */
+    int        nkeys    = 0;         /* number of keys on command line     */
+    int        delay    = 0;         /* delay in releasing the key         */
+    int        polltime = 1;         /* number of seconds in between tries */
+    bool       verbose  = false;     /* should there be info to stderr?    */
+    int        exitcode = 0;
     
-    read_cmdline(argc, argv, &mode, &filename, &keys, &nkeys, &timeout, &delay, &polltime, &verbose);
+    read_cmdline(argc, argv,
+                 &mode, &filename, &keys, &nkeys, &timeout, &delay, &polltime,
+                 &verbose);
 
+    if (verbose) {
+        error(0, 0,
+              "mode:    \t%d\nfilename:\t%s\nnkeys:    \t%d\n",
+              mode, filename, nkeys);
+    }
+    
     switch (mode) {
-    case CREATE:    
+    case CREATE:
         exitcode = create_resource_file(filename, nkeys, keys, verbose); 
         break;
-    case APPEND:    
+    case APPEND:
         exitcode = append_resource_file(filename, nkeys, keys, verbose); 
         break;
-    case OBTAIN:    
-        exitcode = obtain_resource(filename, timeout, polltime, verbose); 
+    case OBTAIN:
+        for (int i = 0; i < nkeys && exitcode == 0; i++) {
+            exitcode = obtain_resource(filename, timeout, polltime, verbose);
+        }
         break;
-    case RELEASE:  
-        exitcode = release_resource(filename, keys[0], delay, verbose); 
+    case RELEASE:
+        if (nkeys > 1) {
+            delay = 0; /* delay does not work yet with multiple releases */
+        }
+        for (int i = 0; i < nkeys && exitcode == 0; i++) {
+            exitcode = release_resource(filename, keys[i], delay, verbose);
+        }
         break;
-    case SHOW_HELP: 
-        show_help(); 
+    case SHOW_HELP:
+        show_help();
         break;
     case ERROR:
         show_help();
         exitcode = 1;
     }
 
-    if (exitcode!=0) 
-        error(exitcode, 0, "Error: %s.", ExitMsg[exitcode]);
-    else 
-        return NO_ERROR;
+    if (exitcode != 0)  {
+        error(exitcode, 0,
+              "Error: %s.",
+              ExitMsg[exitcode]);
+    }
 
-} /* end main((int argc, char**argv) */
+    return exitcode;
+    
+} /* end main() */
 
 /****************************************************************************/
