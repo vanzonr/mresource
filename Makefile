@@ -1,7 +1,7 @@
 # 
 # Makefile - make file for mresource
 #
-# Copyright (c) 2013-2016  Ramses van Zon
+# Copyright (c) 2013-2025  Ramses van Zon
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -24,13 +24,23 @@
 
 CC=gcc
 CFLAGS=-O1 -s -Wall -pedantic -std=c99 -D_POSIX_C_SOURCE=1
+
 all: mresource
 
-mresource: mresource.c
-	${CC} -o $@ $^ ${CFLAGS}
+mresource: mresource.o mresource_actions.o
+	${CC} -o $@ $^ 
+
+mresource_actions.o: mresource_actions.c mresource_actions.h
+	${CC} -c -o $@ $< ${CFLAGS}
+
+mresource.o: mresource.c mresource_actions.h
+	${CC} -c -o $@ $< ${CFLAGS}
 
 test: mresource
 	./mrtest.sh
 
 clean:
-	\rm -f mresource
+	${RM} mresource.o mresource_actions.o
+
+distclean: clean
+	${RM} mresource 
