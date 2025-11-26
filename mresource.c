@@ -81,6 +81,7 @@ static void read_cmdline(int        argc,
                          int*       timeout,
                          int*       delay,
                          int*       polltime,
+                         bool*      repsyntax,
                          bool*      verbose) 
 {
     /* Read command line */
@@ -140,6 +141,10 @@ static void read_cmdline(int        argc,
             case 'v': 
                 *verbose = true;
                 break;
+            case 'r': 
+                *repsyntax = true;
+                error(ARGUMENT_ERROR, 0, "Repeated syntax is not yet supported.");
+                break;
             case 'n': 
                 if (argi < argc-1) {
                     n = atoi(argv[++argi]);
@@ -188,10 +193,10 @@ static void show_help()
            "  Usage:\n"
            "\n"
            "    mresource [ -h | --help ]\n"
-           "    mresource FILE [-t TIME] [-p POLLTIME]\n"
-           "    mresource FILE KEY [-d DELAY] \n"
-           "    mresource FILE -c KEY1 [KEY2 ....] \n"
-           "    mresource FILE -a KEY1 [KEY2 ....] \n"
+           "    mresource FILE [-t TIME] [-p POLLTIME] [-n NUMKEYS] [-r] [-v]\n"
+           "    mresource FILE KEY [KEY2 ....] [-d DELAY] [-r] [-v]\n"
+           "    mresource FILE -c KEY1 [KEY2 ....] [-r] [-v]\n"
+           "    mresource FILE -a KEY1 [KEY2 ....] [-r] [-v]\n"
            "\n"
            "  When given a FILE but no key(s), mresource prints out\n"
            "  the next available resource in the file, and marks it\n"
@@ -219,6 +224,12 @@ static void show_help()
            "\n"
            "  mresource can insert more keys into such a file when\n"
            "  invoked with FILE, '-a', and a list of one or more keys.\n"
+           "\n"
+           "  If '-r' is given, the syntax 'key:n' will be used and\n"
+           "  understood for repeated keys.\n"
+           "\n"
+           "  If '-v' is given, mresource will write out to stderr what\n"
+           "  it is doing.\n"
            "\n"
            "  TIP: When accessed a lot, put FILE a ram-based file\n"
            "  system, e.g., /tmp or /dev/shm.\n"
@@ -559,10 +570,12 @@ int main(int argc, char**argv)
     int        delay    = 0;         /* delay in releasing the key         */
     int        polltime = 1;         /* number of seconds in between tries */
     bool       verbose  = false;     /* should there be info to stderr?    */
+    bool       repsyntax= false;     /* collapse n repeated keys to key:n ?*/
     int        exitcode = 0;
     
     read_cmdline(argc, argv,
                  &mode, &filename, &keys, &nkeys, &timeout, &delay, &polltime,
+                 &repsyntax,
                  &verbose);
 
     if (verbose) {
