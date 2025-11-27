@@ -28,6 +28,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 #include <limits.h>
 #include <error.h>
 
@@ -39,24 +40,18 @@ char ExitMsg[5][22] = { [NO_ERROR]       = "",
                         [TIME_OUT]       = "Time-out" };
 
 /* Show help message: */
-void show_help()
+void show_help1()
 {
     printf("\n"
            "mresource - file-based resource key allocator\n"
            "\n"
            "  Usage:\n"
            "\n"
-           "    mresource [ -h | --help ]\n"
-           "    mresource FILE [-t TIME] [-p POLLTIME] [-n NUMKEYS] [-r] [-v]\n"
-           "    mresource FILE KEY1 [KEY2 ....] [-d DELAY] [-r] [-v]\n"
-           "    mresource FILE -c KEY1 [KEY2 ....] [-r] [-v]\n"
-           "    mresource FILE -a KEY1 [KEY2 ....] [-r] [-v]\n"
-           "    mresource help\n"
-           "    mresource create [-r] [-v] -f FILE KEY1 [KEY2 ....] \n"
-           "    mresource append [-r] [-v] -f FILE KEY1 [KEY2 ....]\n"
-           "    mresource get [-r] [-v] [-t TIME] [-p POLLTIME] [-n NUMKEYS] -f FILE\n"
-           "    mresource put [-r] [-v] [-d DELAY] -f FILE KEY1 [KEY2 ....] \n"
-           
+           "    mresource -h\n"
+           "    mresource FILE [-t TIME] [-p POLLTIME] [-n NUMKEYS] [-v]\n"
+           "    mresource FILE KEY1 [KEY2 ....] [-d DELAY] [-v]\n"
+           "    mresource FILE -c KEY1 [KEY2 ....] [-v]\n"
+           "    mresource FILE -a KEY1 [KEY2 ....] [-v]\n"           
            "\n"
            "  When given a FILE but no key(s), mresource prints out\n"
            "  the next available resource in the file, and marks it\n"
@@ -85,16 +80,13 @@ void show_help()
            "  mresource can insert more keys into such a file when\n"
            "  invoked with FILE, '-a', and a list of one or more keys.\n"
            "\n"
-           "  If '-r' is given, the syntax 'key:n' will be used and\n"
-           "  understood for repeated keys.\n"
-           "\n"
            "  If '-v' is given, mresource will write out to stderr what\n"
            "  it is doing.\n"
            "\n"
            "  TIP: When accessed a lot, put FILE a ram-based file\n"
            "  system, e.g., /tmp or /dev/shm.\n"
            "\n\n"
-           "Ramses van Zon, SciNet, Toronto, 2013-2022\n"
+           "Ramses van Zon, SciNet, Toronto, 2013-2025\n"
            "\n"); 
     
 } /* end show_help() */
@@ -207,6 +199,152 @@ void read_cmdline(int        argc,
     }
 } /* end read_cmdline() */
 
+/* Show help message: */
+void show_help()
+{
+    printf("\n"
+           "mresource - file-based resource key allocator\n"
+           "\n"
+           "  Usage:\n"
+           "\n"
+           "    mresource [ -h | help ]\n"
+           "    mresource get [-v] [-t TIME] [-p POLLTIME] [-n NUMKEYS] -f FILE\n"
+           "    mresource put [-v] [-d DELAY] -f FILE KEY1 [KEY2 ....] \n"          
+           "    mresource create [-v] -f FILE KEY1 [KEY2 ....] \n"
+           "    mresource append [-v] -f FILE KEY1 [KEY2 ....]\n"
+           "\n"
+           "  FILE should contain a list of resource keys. The first character of\n"
+           "  each line is reserved to store the allocation signal: when it is a \n"
+           "  space (as it should be initially), the resource is not reserved, when\n"
+           "  it is an exclamation mark it is.\n"
+           "  (Tip: When used a lot, put this file on a ram-based file system.)\n"
+           "\n"
+           "  The 'get' subcommand prints out the next NUMKEYS available resources\n"
+           "  from FILE, and marks them as used. If no resource is available, it\n"
+           "  waits for POLLTIME seconds before trying again, for upto TIME seconds.\n"
+           "  (defaults: NUMKEYS=1, POLLTIME=2, TIME=infinite)\n"
+           "\n"
+           "  The 'put' subcommand flags the given keys in FILE as available,\n"
+           "  optionally after a DELAY seconds lag time (default is no delay).\n"
+           "  If delayed, it spawns a temporary daemon and errors cannot be caught.\n"
+           "\n"
+           "  The 'create' subcommand generates a resource file with the KEYs given\n"
+           "  on the command line.\n"
+           "\n"
+           "  The 'append' subcommand inserts more keys into the give resource file.\n"
+           "\n"
+           "  If '-v' is given, mresource will write out to stderr what it is doing.\n"
+           "\n"
+           "Ramses van Zon, SciNet, Toronto, 2013-2025\n"
+           "\n"); 
+    
+} /* end show_help() */
+
+/* Read command line: */
+void read_cmdline2(int        argc,
+                  char**     argv,
+                  enum Mode* mode,
+                  char**     file,
+                  char***    keys,
+                  int*       nkeys,
+                  int*       timeout,
+                  int*       delay,
+                  int*       polltime,
+                  bool*      repsyntax,
+                  bool*      verbose) 
+{    
+    int argi;
+    int n = 1;
+    
+    *file    = NULL;
+    *keys    = NULL;
+    *nkeys   = 0;
+    *mode    = ERROR;   /* signals that no mode has been selected yet. */
+    *timeout = INT_MAX; /* about 68 years, so effectively infinite timeout. */
+    *delay   = 0;
+    *polltime= 2;
+    *verbose = false;
+    for (argi = 1; argi < argc; argi++) {
+        if (strcmp(argv[argi], "help")==0 || strcmp(argv[argi], "-h")==0) {
+            *mode = SHOW_HELP;
+        } else if (strcmp(argv[argi], "get")==0) {
+            *mode = OBTAIN;
+        } else if (strcmp(argv[argi], "put")==0) {
+            *mode = RELEASE;
+        } else if (strcmp(argv[argi], "create")==0) {
+            *mode = CREATE;
+        } else if (strcmp(argv[argi], "append")==0) {
+            *mode = APPEND;
+        } else if (argv[argi][0] == SWITCH_CHAR) {
+            switch (argv[argi][1]) {
+            case 'f':
+                *file = argv[++argi];
+                break;
+            case 't': 
+                if (argi < argc-1) {
+                    *timeout = atoi(argv[++argi]);
+                } else {
+                    error(ARGUMENT_ERROR, 0,
+                          "Missing parameter for '-t'.");
+                }
+                break;
+            case 'd': 
+                if (argi < argc-1) {
+                    *delay = atoi(argv[++argi]);
+                } else {
+                    error(ARGUMENT_ERROR, 0,
+                          "Missing parameter for '-d'.");
+                }
+                break;
+            case 'p': 
+                if (argi < argc-1) {
+                    *polltime = atoi(argv[++argi]);
+                } else {
+                    error(ARGUMENT_ERROR, 0,
+                          "Missing parameter for '-p'.");
+                }
+                break;
+            case 'v': 
+                *verbose = true;
+                break;
+            case 'r': 
+                *repsyntax = true;
+                error(ARGUMENT_ERROR, 0, "Repeated syntax is not yet supported.");
+                break;
+            case 'n': 
+                if (argi < argc-1) {
+                    n = atoi(argv[++argi]);
+                } else {
+                    error(ARGUMENT_ERROR, 0,
+                          "Missing parameter for '-p'.");
+                }
+                break;
+            default:
+                error(ARGUMENT_ERROR, 0,
+                      "Unknown option '%s.'", argv[argi]);
+            }
+        } else {
+            if (!*keys) {
+                if (*mode == OBTAIN) {
+                    *mode = RELEASE;
+                }
+                *keys = argv + argi;
+                for (;argi < argc && argv[argi][0] != SWITCH_CHAR; argi++) {
+                    (*nkeys)++;
+                }
+                argi--;
+            } else { 
+                error(ARGUMENT_ERROR, 0,
+                      "Extraneous argument '%s'\n", argv[argi]);
+            }
+        }
+    }
+    /* the -n arguments sets nkeys iff in OBTAIN mode*/
+    if (*mode == OBTAIN) {
+        *nkeys = n; 
+    }
+} /* end read_cmdline() */
+
 
 /* Program start: */
 int main(int argc, char** argv) 
@@ -222,7 +360,7 @@ int main(int argc, char** argv)
     bool       repsyntax= false;     /* collapse n repeated keys to key:n ?*/
     int        exitcode = 0;
     
-    read_cmdline(argc, argv,
+    read_cmdline2(argc, argv,
                  &mode, &filename, &keys, &nkeys, &timeout, &delay, &polltime,
                  &repsyntax, &verbose);
 

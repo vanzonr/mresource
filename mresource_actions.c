@@ -65,84 +65,84 @@ int obtain_resource(char* filename,
                     int   polltime,
                     bool  verbose)
 {
-  /* Resource management routine to obtain a resource given a resource file */
+    /* Resource management routine to obtain a resource given a resource file */
   
-  int exitcode = 0;
-  int maxrep = timeout?((timeout+polltime-1)/polltime):INT_MAX;
+    int exitcode = 0;
+    int max_retries = timeout?((timeout+polltime-1)/polltime):INT_MAX;
   
-  for (int i = 0; i < nkeys && exitcode == 0; i++) {
+    for (int i = 0; i < nkeys && exitcode == 0; i++) {
 
-    FILE*        file;
-    int          file_descriptor;
-    size_t       file_pointer;
-    char         line[MAX_LINE_LEN+1];
-    char*        checkline;
-    int          repeat = 0;
-    int          rep = 0;
-    struct flock set_lock;
-    struct flock unset_lock;
+        FILE*        file;
+        int          file_descriptor;
+        size_t       file_pointer;
+        char         line[MAX_LINE_LEN+1];
+        char*        checkline;
+        bool         repeat = false;
+        int          retry_count = 0;
+        struct flock set_lock;
+        struct flock unset_lock;
 
-    /* optionally report what is being done */    
-    if (verbose) {
-        error(0, 0,
-              "Info: Obtaining a resource key from file '%s' with a timeout of %d s.",
-              filename, timeout);
-    }
-
-    /* to avoid race conditions accessing the resource key file, use locks */
-    fill_file_lock_controls(&set_lock, &unset_lock);
-
-    /* try getting a key until time out */    
-    do {
-        file = fopen(filename, "r+");
-
-        if (file != NULL) {
-
-            file_descriptor = fileno(file);
-            fcntl(file_descriptor, F_SETLKW, &set_lock);
-
-            do {
-                file_pointer = ftell(file);
-                checkline = fgets(line, sizeof(line), file);
-            } while ( checkline != NULL && !feof(file) && line[0] == SIGNAL_CHAR );
-            
-            if (feof(file)) {
-                if (rep < maxrep) {
-                    sleep(polltime);
-                    rep++;
-                    repeat = 1; 
-                } else {
-                    exitcode = TIME_OUT;
-                    repeat = 0;
-                }
-            } else {           
-                fseek(file, file_pointer, SEEK_SET);
-                fprintf(file, "%c", SIGNAL_CHAR);
-                printf("%s", line + 1);
-                exitcode = NO_ERROR;
-                repeat = 0;
-            }
-            
-            fcntl(file_descriptor, F_SETLK, &unset_lock);
-            fclose(file);
-
-        } else {
-            
-            exitcode = FILE_NOT_OPEN;
-            
+        /* optionally report what is being done */    
+        if (verbose) {
+            error(0, 0,
+                  "Info: Obtaining a resource key from file '%s' with a timeout of %d s.",
+                  filename, timeout);
         }
-        
-    } while (repeat); /* keep polling if resources were not avaliable */
 
-    if (verbose && exitcode == 0) {    
-        error(0, 0,
-              "Info: Resource key obtained from file '%s': %s",
-              filename, line+1);
+        /* to avoid race conditions accessing the resource key file, use locks */
+        fill_file_lock_controls(&set_lock, &unset_lock);
+
+        /* try getting a key until time out */    
+        do {
+            file = fopen(filename, "r+");
+
+            if (file != NULL) {
+
+                file_descriptor = fileno(file);
+                fcntl(file_descriptor, F_SETLKW, &set_lock);
+
+                do {
+                    file_pointer = ftell(file);
+                    checkline = fgets(line, sizeof(line), file);
+                } while ( checkline != NULL && !feof(file) && line[0] == SIGNAL_CHAR );
+            
+                if (feof(file)) {
+                    if (retry_count < max_retries) {
+                        sleep(polltime);
+                        retry_count++;
+                        repeat = true; 
+                    } else {
+                        exitcode = TIME_OUT;
+                        repeat = false;
+                    }
+                } else {           
+                    fseek(file, file_pointer, SEEK_SET);
+                    fprintf(file, "%c", SIGNAL_CHAR);
+                    printf("%s", line + 1);
+                    exitcode = NO_ERROR;
+                    repeat = false;
+                }
+            
+                fcntl(file_descriptor, F_SETLK, &unset_lock);
+                fclose(file);
+
+            } else {
+            
+                exitcode = FILE_NOT_OPEN;
+            
+            }
+        
+        } while (repeat); /* keep polling if resources were not avaliable */
+
+        if (verbose && exitcode == 0) {    
+            error(0, 0,
+                  "Info: Resource key obtained from file '%s': %s",
+                  filename, line+1);
+        }
+    
     }
-    
-  }
-    
-  return exitcode;
+
+    return exitcode;
 
 } /* end obtain_resource() */
 
@@ -249,7 +249,7 @@ int release_resource(char*  filename,
                 exitcode |= NOT_FOUND;
             } else {      
                 fseek(file, file_pointer, SEEK_SET);
-                fprintf(file, "%c", ' ');
+                fprintf(file, "%c", DESIGNAL_CHAR);
                 if (verbose) {
                     error(0, 0,
                           "Info: Resource key %s made available again in file '%s'.",
@@ -297,7 +297,7 @@ int create_resource_file(char*  filename,
     if ( f != NULL ) {
 
         for (i = 0; i < argc; i++) {
-            fprintf(f, " %s\n", argv[i]);
+            fprintf(f, "%c%s\n", DESIGNAL_CHAR, argv[i]);
         }
 
         fclose(f);
@@ -345,7 +345,7 @@ int append_resource_file(char*  filename,
             fcntl(file_descriptor, F_SETLKW, &set_lock);
             
             for (i = 0; i < argc; i++) {
-                fprintf(file, " %s\n", argv[i]);
+                fprintf(file, "%c%s\n", DESIGNAL_CHAR, argv[i]);
             }
             
             fcntl(file_descriptor, F_SETLK, &unset_lock);

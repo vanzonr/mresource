@@ -27,11 +27,13 @@
 #include <stdbool.h>
 
 /* Common parameters: */
-#define POLL_INTERVAL    2  /* number of seconds between trying to get a key */
-#define MAX_LINE_LEN  1024  /* maximum number of character per key           */
-#define SIGNAL_CHAR     '!' /* initial character on a line if key is used    */
-#define SIGNAL_CHAR_STR "!" /* initial character on a line if key is used    */
-#define SWITCH_CHAR     '-' /* initial character of a command line switch    */
+#define POLL_INTERVAL       2 /* number of seconds between trying to get a key */
+#define MAX_LINE_LEN     1024 /* maximum number of character per key           */
+#define SIGNAL_CHAR       '!' /* initial character on a line if key is used    */
+#define SIGNAL_CHAR_STR   "!" /* initial character on a line if key is used    */
+#define DESIGNAL_CHAR     ' ' /* initial character on a line if key is unused  */
+#define DESIGNAL_CHAR_STR " " /* initial character on a line if key is unused  */
+#define SWITCH_CHAR       '-' /* initial character of a command line switch    */
 
 /* Possible actions the program may perform: */
 enum Mode { 
@@ -52,14 +54,40 @@ enum ExitCodes {
     TIME_OUT          /* exit code when key was not obtained before timeout  */
 };
 
-/* Resource management routine to obtain a resource given a resource file: */
+/**
+ * @brief Obtain resource keys from a resource file.
+ * 
+ * Tries to obtain nkeys from the specified file, with timeout and polling.
+ * The function will print the obtained keys to stdout, each on a separate line.
+ * 
+ * @param filename Name of the resource file.
+ * @param nkeys    Number of keys to obtain.
+ * @param timeout  Timeout in seconds.
+ * @param polltime Poll interval in seconds.
+ * @param verbose  If true, enables verbose output.
+ * @return Exit code (NO_ERROR, FILE_NOT_OPEN, TIME_OUT, etc.)
+ */
 int obtain_resource(char* filename,
                     int   nkeys,
                     int   timeout,
                     int   polltime,
                     bool  verbose);
 
-/* Resource management routine to release nkeys 'keys' from resource file: */
+/**
+ * @brief Release resource keys back to the resource file.
+ * 
+ * Releases nkeys back to the specified file, optionally after a delay.
+ * If delay is greater than zero, the function will fork a daemon process 
+ * to handle the release. Any non-existing keys or already released keys
+ * will trigger an error only if delay is zero.
+ * 
+ * @param filename Name of the resource file.
+ * @param nkeys    Number of keys to release.
+ * @param keys     Array of keys to release.
+ * @param delay    Delay in seconds before releasing.
+ * @param verbose  If true, enables verbose output.
+ * @return Exit code (NO_ERROR, FILE_NOT_OPEN, NOT_FOUND, etc.)
+ */                  
 int release_resource(char*  filename,
                      int    nkeys,
                      char** keys,
@@ -73,18 +101,37 @@ int release_resource(char*  filename,
                      int    delay,
                      bool   verbose);
 
-/* Create a resource key file with argc keys given by argv: */
+/**
+ * @brief Create a new resource key file with specified keys.
+ * 
+ * Creates a resource file and populates it with nkeys keys.
+ * 
+ * @param filename Name of the resource file to create.
+ * @param nkeys    Number of keys.
+ * @param keys     Array of key strings.
+ * @param verbose  If true, enables verbose output.
+ * @return Exit code (NO_ERROR, FILE_NOT_OPEN, etc.)
+ */
 int create_resource_file(char*  filename,
-                         int    argc,
-                         char** argv,
-                         bool   verbose);
-
-/* Append possible keys to a resource file that could be in use already: */
-int append_resource_file(char*  filename,
-                         int    argc,
-                         char** argv,
+                         int    nkeys,
+                         char** keys,
                          bool   verbose);
 
       
+/**
+ * @brief Append keys to an existing resource file.
+ * 
+ * Appends nkeys keys to the specified resource file.
+ * 
+ * @param filename Name of the resource file to append to.
+ * @param nkeys    Number of keys.
+ * @param keys     Array of key strings.
+ * @param verbose  If true, enables verbose output.
+ * @return Exit code (NO_ERROR, FILE_NOT_OPEN, etc.)
+ */
+int append_resource_file(char*  filename,
+                         int    nkeys,
+                         char** keys,
+                         bool   verbose);
 
 #endif
