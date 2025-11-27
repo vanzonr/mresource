@@ -38,7 +38,7 @@
 # time, occasionally a resource is not grabbed, which is reported as
 # 'no resource'
 #
-# Ramses van Zon, May 2015
+# Ramses van Zon, 2015-2025
 #
 
 # Parameters
@@ -49,17 +49,17 @@ POLLTIME=3
 RESOURCEFILE=/dev/shm/resourcefile
 
 # Create resource file
-./mresource -v $RESOURCEFILE -c R{1..4}
+./mresource create -f $RESOURCEFILE R{1..4} -v
 
 # Set up N tasks
 for ((task=0; task<$N; task++))
 do
     let sec=$RANDOM%$MAXSLEEP
-    resource_handle=$(./mresource -v $RESOURCEFILE -t $TIMEOUT -p $POLLTIME)
+    resource_handle=$(./mresource get -f $RESOURCEFILE -t $TIMEOUT -p $POLLTIME -v)
     if [ $? == 0 ]
     then
         echo $task:$resource_handle:$sec
-        nohup sh -c "sleep $sec && ./mresource -v $RESOURCEFILE $resource_handle" >/dev/null 2> output.$task.txt &
+        nohup sh -c "sleep $sec && ./mresource put -f $RESOURCEFILE $resource_handle -v" >/dev/null 2> output.$task.txt &
     else
         echo $task:no resource available
     fi
