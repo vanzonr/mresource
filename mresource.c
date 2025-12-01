@@ -81,6 +81,7 @@ void show_help()
 } /* end show_help() */
 
 /* Read command line: */
+#define SWITCH_CHAR       '-' /* initial character of a command line switch    */
 void read_cmdline(int        argc,
                   char**     argv,
                   enum Mode* mode,

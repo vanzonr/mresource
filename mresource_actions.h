@@ -26,15 +26,6 @@
 
 #include <stdbool.h>
 
-/* Common parameters: */
-#define POLL_INTERVAL       2 /* number of seconds between trying to get a key */
-#define MAX_LINE_LEN     1024 /* maximum number of character per key           */
-#define SIGNAL_CHAR       '!' /* initial character on a line if key is used    */
-#define SIGNAL_CHAR_STR   "!" /* initial character on a line if key is used    */
-#define DESIGNAL_CHAR     ' ' /* initial character on a line if key is unused  */
-#define DESIGNAL_CHAR_STR " " /* initial character on a line if key is unused  */
-#define SWITCH_CHAR       '-' /* initial character of a command line switch    */
-
 /* Possible actions the program may perform: */
 enum Mode { 
     OBTAIN = 1, 
@@ -88,13 +79,6 @@ int obtain_resource(char* filename,
  * @param verbose  If true, enables verbose output.
  * @return Exit code (NO_ERROR, FILE_NOT_OPEN, NOT_FOUND, etc.)
  */                  
-int release_resource(char*  filename,
-                     int    nkeys,
-                     char** keys,
-                     int    delay,
-                     bool   verbose);
-
-/* Resource management routine to release nkeys 'keys' from resource file: */
 int release_resource(char*  filename,
                      int    nkeys,
                      char** keys,

@@ -35,6 +35,14 @@
 
 #include "mresource_actions.h"
 
+/* Functional parameters: */
+#define POLL_INTERVAL       2 /* number of seconds between trying to get a key */
+#define MAX_LINE_LEN     1024 /* maximum number of character per key           */
+#define SIGNAL_CHAR       '!' /* initial character on a line if key is used    */
+#define SIGNAL_CHAR_STR   "!" /* initial character on a line if key is used    */
+#define DESIGNAL_CHAR     ' ' /* initial character on a line if key is unused  */
+#define DESIGNAL_CHAR_STR " " /* initial character on a line if key is unused  */
+
 /****************************************************************************/
 
 static void fill_file_lock_controls(struct flock* set_lock,
