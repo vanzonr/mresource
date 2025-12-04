@@ -1,0 +1,209 @@
+#!/bin/bash
+#
+# mmpirun - share resources in multiple "mpirun"s
+#
+# - Use this in place of mpirun with less number of processes
+#   (as given by the -n, --n, -np, or -c argument).
+#
+# - It detects how many processes a full mpirun would use, and on
+#   which hosts, and stores those as sots in a host pool file on
+#   /scratch (if available) or /tmp.
+#
+# - Using the mresource utility, it gets a subset of processes from
+#   the hostfile and generates a subhostfile from them that it uses in
+#   the real call to mpirun.
+#
+# - Upon completion, it unflags the used slots in the hostfile.
+#
+# - If run in the background, subsequent calls of mmpirun will use
+#   remaining slots (or fail if there are not enough).
+#
+# - This is particularly useful in multi-node situations.
+#
+# - All resources obtained and returned as well as the mpirun commands
+#   and there exit codes, are all stored, with timestamps, in a log
+#   file.
+#
+# Ramses van Zon, 2025
+#
+
+# shellcheck disable=SC2046
+
+# Don't continue for any errors nor with undefined variables
+set -euo pipefail
+
+# Function to write errors and information to standard error and/or
+# the log file, and optionally exit upon error.
+THISCOMMAND=$(basename "$0")
+report() {
+    local toscreen="$1"
+    local exitonerror="$2"
+    local exitcode="$3"
+    local message="$4"
+    local logfile="${5:-}"
+    local logtime="${6:-}"
+    local fullmessage=""
+    local prefixmessage="INFO "
+    if [ "${exitcode}" != 0 ]
+    then
+        prefixmessage="ERROR"
+    fi
+    fullmessage="${prefixmessage} (${THISCOMMAND}): ${message}"
+    if $toscreen
+    then
+        echo "${fullmessage}" 1>&2
+    fi
+    if [ -n "${logfile}" ]
+    then
+        if [ -z "${logtime}" ]
+        then
+            logtime=$(/usr/bin/date +"%Y-%m-%d@%H:%M:%S")
+        fi
+        echo "${logtime}: ${fullmessage}" >> "${logfile}"
+    fi
+    if "${exitonerror}"
+    then
+        if [ "${exitcode}" != 0 ]
+        then
+            exit "${exitcode}"
+        fi
+    fi
+}
+
+# Cleanup routine
+CLEANUP_DONE=false
+cleanup() {
+    if ! $CLEANUP_DONE
+    then
+        CLEANUP_DONE=true
+        # Only return resources if HOSTFILE exists and is not empty
+        if [ -f "${HOSTFILE:-}" ] && [ -f "${HOSTPOOL:-}" ]
+        then
+            mresource put -f "${HOSTPOOL}" $(cat "${HOSTFILE}") || true
+            \rm -f "${HOSTFILE}" || true
+        fi
+    fi
+}
+
+# Trap exit signals to run cleanup
+trap cleanup EXIT SIGINT SIGTERM
+
+# 0. Check if mpirun is a known command and works
+
+if ! /usr/bin/which mpirun >&/dev/null
+then
+    report true true 1 "Command 'mpirun' not found."
+fi
+if ! mpirun -n 1 hostname >&/dev/null
+then
+    report true true 1 "Command 'mpirun' is not functional."
+fi
+
+# 1. Setup hostfile.
+
+# 1a) Determine a (hopefully) unique name for the HOSTPOOL.
+if [ -d "${SCRATCH:-}" ] && [ -n "${SLURM_JOBID:-}" ]
+then
+    HOSTPOOL="${SCRATCH}/.mresource/hostfile-${SLURM_JOBID}.txt"
+elif [ -d "/scratch/${USER}" ] && [ -n "${SLURM_JOBID:-}" ]
+then
+    HOSTPOOL="/scratch/${USER}/.mresource/hostfile-${SLURM_JOBID}.txt"
+else
+    HOSTPOOL="/tmp/hostfile.txt"
+fi
+
+# 1b) Check existing HOSTPOOL.
+MUSTGENERATEHOSTPOOL=false
+if ! [ -f "${HOSTPOOL}" ]
+then
+    HOSTPOOLDIR=$(/usr/bin/dirname "${HOSTPOOL}")    
+    MUSTGENERATEHOSTPOOL=true
+    if ! /usr/bin/mkdir -p "${HOSTPOOLDIR}"
+    then
+        report true true 1 "Could not create directory '${HOSTPOOLDIR}'"
+    fi
+else
+    nslots=$(mpirun hostname | wc -l)
+    nslotsinfile=$(/usr/bin/cat "${HOSTPOOL}" | /usr/bin/wc -l)    
+    if [ "${nslots}" != "${nslotsinfile}" ]
+    then
+        nslotsinuse=$(/usr/bin/cat "${HOSTPOOL}" | /usr/bin/grep "^!" | /usr/bin/wc -l)
+        if (( nslotsinuse > 0 ))
+        then
+            report true true 1 "Discrepency in number of slots in file '${HOSTPOOL}'"
+        else
+            MUSTGENERATEHOSTPOOL=true
+        fi
+    fi
+fi
+
+# 1c) Create the HOSTPOOL if necessary.
+if ${MUSTGENERATEHOSTPOOL}
+then
+    if ! mresource create -f "${HOSTPOOL}" $(mpirun hostname)
+    then
+        \rm -f "${HOSTPOOL}"
+        report true true 1 "Could not successfully create file '${HOSTPOOL}'"
+    fi
+    createtimestamp=$(/usr/bin/date +"%Y-%m-%d@%H:%M:%S")
+    echo "# This is the log file '$(basename "${HOSTPOOL}.log")', created in the directory '$(dirname "${HOSTPOOL}")' on ${createtimestamp}." > "${HOSTPOOL}.log"
+    report true false 0 "Created hostfile '$(basename "${HOSTPOOL}")' in the directory '$(dirname "${HOSTPOOL}")'." "${HOSTPOOL}.log" "${createtimestamp}"
+    report true false 0 "Logs are written to '$(basename "${HOSTPOOL}.log")' in the same directory." "${HOSTPOOL}.log" "${createtimestamp}"
+else
+    report true false 0 "See '${HOSTPOOL}.log' for logging messages."
+fi
+
+
+# 2. Pick out the number of processes N from the arguments.
+
+# 2a) Search through arguments for -n,-c,-np, or --n.
+previousarg=""
+N=0
+for arg in "$@"
+do
+    case "${previousarg}" in
+        -n|-c|-np|--n)
+            if ! (( N="${arg}" ))
+            then
+                report true true 1 "${arg} is not a number"
+            fi
+            break
+    esac
+    previousarg="${arg}"
+done
+
+# 2b) If no -n, --n, -c, or --np argument was given, use all available slots. 
+if [ "${N}" = 0 ]
+then
+    N=$(/usr/bin/cat "${HOSTPOOL}" | /usr/bin/grep -v "^!" | /usr/bin/wc -l)
+fi
+
+# 3. Get resources from the HOSTPOOL (5s timeout) and store in separate file.
+
+HOSTFILE=$(mktemp)
+starttimestamp=$(/usr/bin/date +"%Y-%m-%d@%H:%M:%S")
+error=0 # catching error code to be able to report failures
+mresource get -f "${HOSTPOOL}" -n "${N}" -t 5 > "${HOSTFILE}" || error="$?"
+if [ "$error" = 0 ]
+then
+    whichmpirun=$(/usr/bin/which mpirun)
+    whichhosts=$(/usr/bin/cat "${HOSTFILE}"|/usr/bin/tr '\n' ',')
+    report false false 0 "${whichmpirun} --host ${whichhosts} $*" "${HOSTPOOL}.log" "${starttimestamp}"
+    nlines=$(cat "${HOSTPOOL}.log" | wc -l)
+    "${whichmpirun}" --host "${whichhosts}" "$@" || error=$?
+    stoptimestamp=$(/usr/bin/date +"%Y-%m-%d@%H:%M:%S")
+    report false false "${error}" "Command from line ${nlines} finished with exit code ${error}" "${HOSTPOOL}.log" "${stoptimestamp}"
+else
+    case "${error}" in
+        1) errortype="File could not be opened" ;;
+        2) errortype="File could not be found" ;;
+        3) errortype="Incorrect mresource arguments" ;;
+        4) errortype="Time-out" ;;
+        *) errortype="Unknown error" ;;
+    esac
+    report true false "${error}" "Could not get ${N} resources from '${HOSTPOOL}' (${errortype})." "${HOSTPOOL}.log" "${starttimestamp}"
+fi
+
+cleanup
+
+exit "${error}"
