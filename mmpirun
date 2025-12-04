@@ -34,165 +34,144 @@ set -euo pipefail
 
 # Function to write errors and information to standard error and/or
 # the log file, and optionally exit upon error.
-THISCOMMAND=$(basename "$0")
-report() {
-    local toscreen="$1"
-    local exitonerror="$2"
-    local exitcode="$3"
+function report()
+{
+    local this_command="${0##*/}"
+    local to_screen="$1"
+    local exit_on_error="$2"
+    local exit_code="$3"
     local message="$4"
-    local logfile="${5:-}"
-    local logtime="${6:-}"
-    local fullmessage=""
-    local prefixmessage="INFO "
-    if [ "${exitcode}" != 0 ]
-    then
-        prefixmessage="ERROR"
+    local log_file="${5:-}"
+    local log_time="${6:-}"
+    local full_message=""
+    local prefix_message="INFO "
+    if [[ "${exit_code}" != 0 ]] ; then
+        prefix_message="ERROR"
     fi
-    fullmessage="${prefixmessage} (${THISCOMMAND}): ${message}"
-    if $toscreen
-    then
-        echo "${fullmessage}" 1>&2
+    full_message="${prefix_message} (${this_command}): ${message}"
+    if $to_screen ; then
+        echo "${full_message}" 1>&2
     fi
-    if [ -n "${logfile}" ]
-    then
-        if [ -z "${logtime}" ]
-        then
-            logtime=$(/usr/bin/date +"%Y-%m-%d@%H:%M:%S")
+    if [[ -n "${log_file}" ]] ; then
+        if [[ -z "${log_time}" ]] ; then
+            log_time=$(/usr/bin/date +"%Y-%m-%d@%H:%M:%S")
         fi
-        echo "${logtime}: ${fullmessage}" >> "${logfile}"
+        echo "${log_time}: ${full_message}" >> "${log_file}"
     fi
-    if "${exitonerror}"
-    then
-        if [ "${exitcode}" != 0 ]
-        then
-            exit "${exitcode}"
+    if "${exit_on_error}" ; then
+        if [[ "${exit_code}" != 0 ]] ; then
+            exit "${exit_code}"
         fi
     fi
 }
 
-# Cleanup routine
-CLEANUP_DONE=false
-cleanup() {
-    if ! $CLEANUP_DONE
-    then
-        CLEANUP_DONE=true
-        # Only return resources if HOSTFILE exists and is not empty
-        if [ -f "${HOSTFILE:-}" ] && [ -f "${HOSTPOOL:-}" ]
-        then
-            mresource put -f "${HOSTPOOL}" $(cat "${HOSTFILE}") || true
-            \rm -f "${HOSTFILE}" || true
+# Clean up routine
+clean_up_done=false
+function clean_up()
+{
+    if ! "${clean_up_done}" ; then
+        clean_up_done=true
+        if [[ -f "${HOSTFILE:-}" && -f "${HOSTPOOLFILE:-}" ]] ; then
+            mresource put -f "${HOSTPOOLFILE}" $(/usr/bin/cat "${HOSTFILE}") || true
+            \rm --force "${HOSTFILE}" || true
         fi
     fi
 }
 
-# Trap exit signals to run cleanup
-trap cleanup EXIT SIGINT SIGTERM
+# Trap exit signals to run clean_up
+trap clean_up EXIT SIGINT SIGTERM
 
 # 0. Check if mpirun is a known command and works
 
-if ! /usr/bin/which mpirun >&/dev/null
-then
+if ! /usr/bin/which mpirun >&/dev/null ; then
     report true true 1 "Command 'mpirun' not found."
 fi
-if ! mpirun -n 1 hostname >&/dev/null
-then
+if ! mpirun -n 1 hostname >&/dev/null ; then
     report true true 1 "Command 'mpirun' is not functional."
 fi
 
 # 1. Setup hostfile.
 
-# 1a) Determine a (hopefully) unique name for the HOSTPOOL.
-if [ -d "${SCRATCH:-}" ] && [ -n "${SLURM_JOBID:-}" ]
-then
-    HOSTPOOL="${SCRATCH}/.mresource/hostfile-${SLURM_JOBID}.txt"
-elif [ -d "/scratch/${USER}" ] && [ -n "${SLURM_JOBID:-}" ]
-then
-    HOSTPOOL="/scratch/${USER}/.mresource/hostfile-${SLURM_JOBID}.txt"
+# 1a) Determine a (hopefully) unique name for the HOSTPOOLFILE.
+if [[ -d "${SCRATCH:-}" && -n "${SLURM_JOBID:-}" ]] ; then
+    HOSTPOOLFILE="${SCRATCH}/.mresource/hostfile-${SLURM_JOBID}.txt"
+elif [[ -d "/scratch/${USER}" && -n "${SLURM_JOBID:-}" ]] ; then
+    HOSTPOOLFILE="/scratch/${USER}/.mresource/hostfile-${SLURM_JOBID}.txt"
 else
-    HOSTPOOL="/tmp/hostfile.txt"
+    HOSTPOOLFILE="/tmp/hostfile.txt"
 fi
 
-# 1b) Check existing HOSTPOOL.
-MUSTGENERATEHOSTPOOL=false
-if ! [ -f "${HOSTPOOL}" ]
-then
-    HOSTPOOLDIR=$(/usr/bin/dirname "${HOSTPOOL}")    
-    MUSTGENERATEHOSTPOOL=true
-    if ! /usr/bin/mkdir -p "${HOSTPOOLDIR}"
-    then
-        report true true 1 "Could not create directory '${HOSTPOOLDIR}'"
+# 1b) Check existing HOSTPOOLFILE.
+must_generate_host_pool_file=false
+if ! [[ -f "${HOSTPOOLFILE}" ]] ; then
+    host_pool_file_dir=$(/usr/bin/dirname "${HOSTPOOLFILE}")
+    must_generate_host_pool_file=true
+    if ! /usr/bin/mkdir --parents "${host_pool_file_dir}" ; then
+        report true true 1 "Could not create directory '${host_pool_file_dir}'"
     fi
 else
-    nslots=$(mpirun hostname | wc -l)
-    nslotsinfile=$(/usr/bin/cat "${HOSTPOOL}" | /usr/bin/wc -l)    
-    if [ "${nslots}" != "${nslotsinfile}" ]
-    then
-        nslotsinuse=$(/usr/bin/cat "${HOSTPOOL}" | /usr/bin/grep "^!" | /usr/bin/wc -l)
-        if (( nslotsinuse > 0 ))
-        then
-            report true true 1 "Discrepency in number of slots in file '${HOSTPOOL}'"
+    nslots=$(mpirun hostname | /usr/bin/wc --lines)
+    nslotsinfile=$(/usr/bin/cat "${HOSTPOOLFILE}" | /usr/bin/wc --lines)    
+    if [[ "${nslots}" != "${nslotsinfile}" ]] ; then
+        nslotsinuse=$(/usr/bin/cat "${HOSTPOOLFILE}" | /usr/bin/grep "^!" | /usr/bin/wc --lines)
+        if (( nslotsinuse > 0 )) ; then
+            report true true 1 "Discrepency in number of slots in file '${HOSTPOOLFILE}'"
         else
-            MUSTGENERATEHOSTPOOL=true
+            must_generate_host_pool_file=true
         fi
     fi
 fi
 
-# 1c) Create the HOSTPOOL if necessary.
-if ${MUSTGENERATEHOSTPOOL}
-then
-    if ! mresource create -f "${HOSTPOOL}" $(mpirun hostname)
-    then
-        \rm -f "${HOSTPOOL}"
-        report true true 1 "Could not successfully create file '${HOSTPOOL}'"
+# 1c) Create the HOSTPOOLFILE if necessary.
+if ${must_generate_host_pool_file} ; then
+    if ! mresource create -f "${HOSTPOOLFILE}" $(mpirun hostname) ; then
+        \rm --force "${HOSTPOOLFILE}"
+        report true true 1 "Could not successfully create file '${HOSTPOOLFILE}'"
     fi
     createtimestamp=$(/usr/bin/date +"%Y-%m-%d@%H:%M:%S")
-    echo "# This is the log file '$(basename "${HOSTPOOL}.log")', created in the directory '$(dirname "${HOSTPOOL}")' on ${createtimestamp}." > "${HOSTPOOL}.log"
-    report true false 0 "Created hostfile '$(basename "${HOSTPOOL}")' in the directory '$(dirname "${HOSTPOOL}")'." "${HOSTPOOL}.log" "${createtimestamp}"
-    report true false 0 "Logs are written to '$(basename "${HOSTPOOL}.log")' in the same directory." "${HOSTPOOL}.log" "${createtimestamp}"
+    echo "# This is the log file '$(/usr/bin/basename "${HOSTPOOLFILE}.log")', created in the directory '$(/usr/bin/dirname "${HOSTPOOLFILE}")' on ${createtimestamp}." > "${HOSTPOOLFILE}.log"
+    report true false 0 "Created hostfile '$(/usr/bin/basename "${HOSTPOOLFILE}")' in the directory '$(/usr/bin/dirname "${HOSTPOOLFILE}")'." "${HOSTPOOLFILE}.log" "${createtimestamp}"
+    report true false 0 "Logs are written to '$(/usr/bin/basename "${HOSTPOOLFILE}.log")' in the same directory." "${HOSTPOOLFILE}.log" "${createtimestamp}"
 else
-    report true false 0 "See '${HOSTPOOL}.log' for logging messages."
+    report true false 0 "See '${HOSTPOOLFILE}.log' for logging messages."
 fi
 
 
-# 2. Pick out the number of processes N from the arguments.
+# 2. Pick out the number of processes from the arguments.
 
 # 2a) Search through arguments for -n,-c,-np, or --n.
-previousarg=""
-N=0
-for arg in "$@"
-do
-    case "${previousarg}" in
+previous_arg=""
+num_processes=0
+for arg in "$@" ; do
+    case "${previous_arg}" in
         -n|-c|-np|--n)
-            if ! (( N="${arg}" ))
-            then
+            if ! (( num_processes="${arg}" )) ; then
                 report true true 1 "${arg} is not a number"
             fi
             break
     esac
-    previousarg="${arg}"
+    previous_arg="${arg}"
 done
 
 # 2b) If no -n, --n, -c, or --np argument was given, use all available slots. 
-if [ "${N}" = 0 ]
-then
-    N=$(/usr/bin/cat "${HOSTPOOL}" | /usr/bin/grep -v "^!" | /usr/bin/wc -l)
+if [[ "${num_processes}" = 0 ]] ; then
+    num_processes=$(/usr/bin/cat "${HOSTPOOLFILE}" | /usr/bin/grep --invert-match "^!" | /usr/bin/wc --lines)
 fi
 
-# 3. Get resources from the HOSTPOOL (5s timeout) and store in separate file.
+# 3. Get resources from the HOSTPOOLFILE (10s timeout) and store in separate file.
 
-HOSTFILE=$(mktemp)
+HOSTFILE=$(/usr/bin/mktemp)
 starttimestamp=$(/usr/bin/date +"%Y-%m-%d@%H:%M:%S")
 error=0 # catching error code to be able to report failures
-mresource get -f "${HOSTPOOL}" -n "${N}" -t 5 > "${HOSTFILE}" || error="$?"
-if [ "$error" = 0 ]
-then
+mresource get -f "${HOSTPOOLFILE}" -n "${num_processes}" -t 10 > "${HOSTFILE}" || error="$?"
+if [[ "$error" = 0 ]] ; then
     whichmpirun=$(/usr/bin/which mpirun)
     whichhosts=$(/usr/bin/cat "${HOSTFILE}"|/usr/bin/tr '\n' ',')
-    report false false 0 "${whichmpirun} --host ${whichhosts} $*" "${HOSTPOOL}.log" "${starttimestamp}"
-    nlines=$(cat "${HOSTPOOL}.log" | wc -l)
+    report false false 0 "${whichmpirun} --host ${whichhosts} $*" "${HOSTPOOLFILE}.log" "${starttimestamp}"
+    nlines=$(/usr/bin/cat "${HOSTPOOLFILE}.log" | /usr/bin/wc --lines)
     "${whichmpirun}" --host "${whichhosts}" "$@" || error=$?
     stoptimestamp=$(/usr/bin/date +"%Y-%m-%d@%H:%M:%S")
-    report false false "${error}" "Command from line ${nlines} finished with exit code ${error}" "${HOSTPOOL}.log" "${stoptimestamp}"
+    report false false "${error}" "Command from line ${nlines} finished with exit code ${error}" "${HOSTPOOLFILE}.log" "${stoptimestamp}"
 else
     case "${error}" in
         1) errortype="File could not be opened" ;;
@@ -201,9 +180,9 @@ else
         4) errortype="Time-out" ;;
         *) errortype="Unknown error" ;;
     esac
-    report true false "${error}" "Could not get ${N} resources from '${HOSTPOOL}' (${errortype})." "${HOSTPOOL}.log" "${starttimestamp}"
+    report true false "${error}" "Could not get ${num_processes} resources from '${HOSTPOOLFILE}' (${errortype})." "${HOSTPOOLFILE}.log" "${starttimestamp}"
 fi
 
-cleanup
+clean_up
 
 exit "${error}"
